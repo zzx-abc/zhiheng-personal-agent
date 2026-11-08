@@ -1,0 +1,25 @@
+{
+  "name": "zhiheng-dsh-runtime",
+  "version": "1.0.0",
+  "description": "Isolated model-only DeepSeek Harness runtime adapter for Zhiheng",
+  "main": "index.js",
+  "scripts": {
+    "preflight": "node preflight.mjs",
+    "handshake": "node handshake.mjs"
+  },
+  "keywords": [],
+  "author": "",
+  "license": "ISC",
+  "type": "commonjs",
+  "dependencies": {
+    "@deepseek-ai/dsh": "0.2.2-rc.1",
+    "@deepseek-ai/dsh-sdk-client": "0.2.2-rc.1"
+  },
+  "private": true,
+  "overrides": {
+    "undici": "8.12.2",
+    "zod": "4.6.7",
+    "fflate": "0.8.3",
+    "@modelcontextprotocol/client": "2.3.0"
+  }
+}
