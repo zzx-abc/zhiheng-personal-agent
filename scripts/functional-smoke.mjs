@@ -4,10 +4,21 @@ mkdirSync('artifacts',{recursive:true});
 const data=mkdtempSync(path.join(tmpdir(),'zhiheng-ui-test-')),base='http://127.0.0.1:3211';
 const server=spawn(process.execPath,['node_modules/next/dist/bin/next','dev','--hostname','127.0.0.1','--port','3211'],{env:{...process.env,AGENT_DATA_DIR:data,AGENT_TEST_MODE:'1',MOONSHOT_API_KEY:'',NEXT_TELEMETRY_DISABLED:'1'},stdio:['ignore','pipe','pipe']});let log='',browser;server.stdout.on('data',b=>log+=b);server.stderr.on('data',b=>log+=b);
 const api=async body=>{const r=await fetch(base+'/api/agent',{method:'POST',headers:{'Content-Type':'application/json',Origin:base},body:JSON.stringify(body)});const result=await r.json();if(!r.ok)throw Error(result.error);return result};
+async function verifyOfflineRecovery(page){
+ await page.route('**/api/agent',route=>route.abort('failed'));
+ await page.getByLabel('说说你的想法').fill('测试样例：断线时保留这段草稿');
+ await page.getByRole('button',{name:'发送',exact:true}).click();
+ await expect(page.locator('.error-banner[role=alert]')).toContainText('连接不到本机服务');
+ await expect(page.getByLabel('说说你的想法')).toHaveValue('测试样例：断线时保留这段草稿');
+ await page.unroute('**/api/agent');
+ await expect(page.locator('.error-banner[role=alert]')).toHaveCount(0,{timeout:8000});
+ await page.getByLabel('说说你的想法').fill('');
+}
 try{
  for(let i=0;i<60;i++){try{if((await fetch(base+'/api/agent')).ok)break}catch{}await new Promise(r=>setTimeout(r,500));if(i===59)throw Error(log)}
  browser=await chromium.launch({executablePath:'/Applications/Google Chrome.app/Contents/MacOS/Google Chrome',headless:true});const page=await browser.newPage({viewport:{width:1440,height:1000}}),errors=[];page.on('pageerror',e=>errors.push(e.message));await page.goto(base);
  await expect(page.getByRole('heading',{name:'今天，想清楚哪一步？'})).toBeVisible();await expect(page.getByLabel('说说你的想法')).toBeVisible();await expect(page.locator('.sidebar,.context-panel')).toHaveCount(0);await page.screenshot({path:'artifacts/redesign-home-desktop.png',fullPage:true});
+ await verifyOfflineRecovery(page);
  await page.setViewportSize({width:390,height:844});await page.screenshot({path:'artifacts/redesign-home-mobile.png',fullPage:true});if(await page.evaluate(()=>document.documentElement.scrollWidth>innerWidth))throw Error('Mobile overflow');
  await page.getByLabel('说说你的想法').fill('测试样例：我担心订单质量，这不是交易规则。');await page.getByLabel('只记下来',{exact:true}).check();await page.getByRole('button',{name:'发送',exact:true}).click();await expect(page.getByText('测试样例：我担心订单质量，这不是交易规则。',{exact:true})).toBeVisible();await page.reload();await page.getByRole('button',{name:'找回之前的随手想法 →'}).click();await expect(page.getByText('测试样例：我担心订单质量，这不是交易规则。',{exact:true})).toBeVisible();
  await page.getByLabel('说说你的想法').fill('测试样例：我想检查当前依据。');await page.getByRole('button',{name:'发送',exact:true}).click();await expect(page.getByText('这一条已保存，尚未完成',{exact:true})).toBeVisible();
