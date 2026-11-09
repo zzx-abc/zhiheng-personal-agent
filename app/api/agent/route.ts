@@ -1,3 +1,4 @@
+import {setWeeklyEnabled,requestWeeklyReview,retryWeeklyReview,correctWeeklyReview,deleteWeeklyReview} from '../../../server/weekly-review';
 import {correctTag,applyLinkFeedback} from '../../../server/memory-learning';
 import { NextRequest,NextResponse } from 'next/server';
 import { z } from 'zod';
@@ -13,6 +14,11 @@ export const dynamic='force-dynamic';
 function failure(e:unknown){return NextResponse.json({error:e instanceof Error?e.message:'请求失败'},{status:400});}
 export async function GET(req:NextRequest){try{guard(req);const query=req.nextUrl.searchParams.get('q');return NextResponse.json(query?{results:searchHistory(query,req.nextUrl.searchParams.get('topic'))}:snapshot(),{headers:{'Cache-Control':'no-store'}});}catch(e){return failure(e);}}
 const actions=z.discriminatedUnion('action',[
+ z.object({action:z.literal('weekly_settings'),enabled:z.boolean()}),
+ z.object({action:z.literal('weekly_generate')}),
+ z.object({action:z.literal('weekly_retry'),id:z.string().uuid()}),
+ z.object({action:z.literal('weekly_correct'),id:z.string().uuid(),content:z.string().trim().min(1).max(800)}),
+ z.object({action:z.literal('weekly_delete'),id:z.string().uuid()}),
  z.object({action:z.literal('tag_correct'),id:z.string().uuid(),label:z.string().trim().max(40)}),
  z.object({action:z.literal('link_feedback'),id:z.string().uuid(),decision:z.enum(['confirmed','rejected','proposed']),note:z.string().trim().max(500).default('')}),
  z.object({action:z.literal('correct_card'),id:z.string().max(180),content:z.string().trim().min(1).max(1000)}),
@@ -45,6 +51,11 @@ export async function POST(req:NextRequest){try{guard(req);
  }
  const a=actions.parse(await req.json());let result:unknown={ok:true};
  switch(a.action){
+ case 'weekly_settings':setWeeklyEnabled(a.enabled);break;
+ case 'weekly_generate':result=requestWeeklyReview();break;
+ case 'weekly_retry':result=retryWeeklyReview(a.id);break;
+ case 'weekly_correct':result=correctWeeklyReview(a.id,a.content);break;
+ case 'weekly_delete':deleteWeeklyReview(a.id);break;
  case 'tag_correct':correctTag(a.id,a.label);break;
  case 'link_feedback':result={sourceId:applyLinkFeedback(a.id,a.decision,a.note)};syncCards();break;
  case 'correct_card':transaction(()=>{const card=one<MemoryCard>('SELECT * FROM memory_cards WHERE id=?',a.id);if(!card)throw Error('记忆卡片已不存在');const source=addRecord(a.content,card.topic_id,'correction');const at=now();exec('INSERT INTO memories VALUES(?,?,?,?,?,?,?,?,?,?)',id(),card.topic_id,'correction',a.content,'active',source,a.content,at,at,null);if(card.id.startsWith('memory:'))exec("UPDATE memories SET status='withdrawn',updated_at=? WHERE id=?",at,card.id.slice(7));bump();invalidateGenerated(card.topic_id);});syncCards();break;
@@ -55,7 +66,7 @@ export async function POST(req:NextRequest){try{guard(req);
  case 'run_task':result={runId:runTask(a.id)};break;
  case 'task_status':pauseTask(a.id,a.status);break;
  case 'cancel':cancel(a.id);break;
- case 'retry':{const r=one<Run>('SELECT * FROM runs WHERE id=?',a.id);if(!r||['queued','running'].includes(r.status))throw Error('当前执行不可重试');result={runId:r.task_id?runTask(r.task_id):enqueue(r.record_id,a.mode||r.mode)};break;}
+ case 'retry':{const r=one<Run>('SELECT * FROM runs WHERE id=?',a.id);if(!r||r.mode==='weekly'||['queued','running'].includes(r.status))throw Error('当前执行不可重试');result={runId:r.task_id?runTask(r.task_id):enqueue(r.record_id,a.mode||r.mode)};break;}
  case 'memory':result={id:addMemory(a.content,a.kind,a.topicId)};break;
  case 'correct':correctMemory(a.id,a.content);break;
  case 'memory_status':transaction(()=>{const m=one<{topic_id:string|null}>('SELECT topic_id FROM memories WHERE id=?',a.id);if(!m)throw Error('记忆不存在');exec('UPDATE memories SET status=?,updated_at=? WHERE id=?',a.status,now(),a.id);bump();invalidateGenerated(m.topic_id);});break;

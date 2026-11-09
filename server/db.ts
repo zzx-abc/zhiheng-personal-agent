@@ -24,6 +24,18 @@ CREATE TABLE IF NOT EXISTS working_states(id TEXT PRIMARY KEY,topic_id TEXT NOT 
 CREATE UNIQUE INDEX IF NOT EXISTS one_current_state ON working_states(topic_id) WHERE status='current';
 CREATE TABLE IF NOT EXISTS record_context(record_id TEXT PRIMARY KEY REFERENCES records(id) ON DELETE CASCADE,parent_id TEXT REFERENCES records(id) ON DELETE SET NULL,root_id TEXT REFERENCES records(id) ON DELETE SET NULL);
 CREATE INDEX IF NOT EXISTS record_context_root ON record_context(root_id);
+CREATE TABLE IF NOT EXISTS weekly_schedule(id INTEGER PRIMARY KEY CHECK(id=1),enabled INTEGER NOT NULL DEFAULT 0,next_at TEXT,last_checked TEXT);
+INSERT OR IGNORE INTO weekly_schedule(id) VALUES(1);
+CREATE TABLE IF NOT EXISTS weekly_reviews(id TEXT PRIMARY KEY,period_start TEXT NOT NULL,period_end TEXT NOT NULL,trigger TEXT NOT NULL,scheduled_for TEXT UNIQUE,created_at TEXT NOT NULL);
+CREATE TABLE IF NOT EXISTS weekly_versions(run_id TEXT PRIMARY KEY REFERENCES runs(id) ON DELETE CASCADE,review_id TEXT NOT NULL REFERENCES weekly_reviews(id) ON DELETE CASCADE,created_at TEXT NOT NULL);
+CREATE TABLE IF NOT EXISTS weekly_sources(run_id TEXT NOT NULL REFERENCES weekly_versions(run_id) ON DELETE CASCADE,record_id TEXT NOT NULL REFERENCES records(id) ON DELETE CASCADE,PRIMARY KEY(run_id,record_id));
+CREATE TABLE IF NOT EXISTS weekly_feedback(id TEXT PRIMARY KEY,review_id TEXT NOT NULL REFERENCES weekly_reviews(id) ON DELETE CASCADE,record_id TEXT NOT NULL REFERENCES records(id) ON DELETE CASCADE,created_at TEXT NOT NULL);
+CREATE TRIGGER IF NOT EXISTS weekly_source_removed BEFORE DELETE ON records BEGIN
+ UPDATE runs SET result=NULL,status='stale',error='回顾来源已删除，请重新生成' WHERE id IN (SELECT run_id FROM weekly_sources WHERE record_id=OLD.id);
+END;
+CREATE TRIGGER IF NOT EXISTS weekly_revision_changed AFTER UPDATE OF value ON meta WHEN NEW.key='revision' AND NEW.value!=OLD.value BEGIN
+ UPDATE runs SET status='stale',error='个人理解已有修正，此回顾仅供查看历史，可重新生成' WHERE mode='weekly' AND status IN ('succeeded','partial');
+END;
 CREATE INDEX IF NOT EXISTS records_topic ON records(topic_id,created_at);
 CREATE INDEX IF NOT EXISTS runs_status ON runs(status,created_at);`);
 export const id = () => randomUUID();

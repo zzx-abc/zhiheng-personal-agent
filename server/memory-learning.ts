@@ -43,7 +43,7 @@ export function ruleTags(text:string):TagInput[]{
 }
 const canonical=(label:string)=>({订单改善:'订单兑现',订单质量:'订单兑现',换仓:'考虑调整',持有理由:'原始依据',关注理由:'原始依据'}[label]||label.trim());
 export function saveTags(record:RecordRow,inputs:TagInput[],origin:'model'|'rule'='model'){
- if(record.role!=='user'||['relation_feedback','tag_feedback'].includes(record.kind))return;
+ if(record.role!=='user'||['relation_feedback','tag_feedback','weekly_feedback'].includes(record.kind))return;
  for(const item of inputs.slice(0,10)){
   const parsed=tagSchema.safeParse(item);if(!parsed.success)continue;
   const t=parsed.data,label=t.kind==='entity'?t.label:canonical(t.label);
@@ -100,7 +100,7 @@ export function feedbackWeight(recordId:string,targetId:string){
 export function proactiveRecall(record:RecordRow):{query:string;reason:string}|null{
  const tags=tagsFor([record.id]);
  if(record.kind==='note'||captureContext(record.id)?.parent_id||!tags.some(t=>t.kind==='intent'&&t.label==='考虑调整'))return null;
- const hasPast=one("SELECT id FROM records WHERE role='user' AND id!=? AND kind NOT IN ('relation_feedback','tag_feedback') LIMIT 1",record.id);
+ const hasPast=one("SELECT id FROM records WHERE role='user' AND id!=? AND kind NOT IN ('relation_feedback','tag_feedback','weekly_feedback') LIMIT 1",record.id);
  if(!hasPast)return null;
  const entities=tags.filter(t=>t.kind==='entity').map(t=>t.label).join(' ');
  return {query:`${entities} 关注理由 原始依据 验证条件`,reason:'本次考虑调整，主动寻找原先依据与验证条件；对象不明时仅作候选，不能认定是同一笔持仓'};

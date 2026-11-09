@@ -21,7 +21,7 @@ export function reconcileLegacyReservations(){
 }
 export function recoverPendingUsage(){
  // A crashed worker leaves uncertain charges, never permanently in-flight ones.
- exec("UPDATE usage SET model=REPLACE(model,'pending:','unconfirmed:') WHERE model LIKE 'pending:%' AND (run_id IS NULL OR run_id IN (SELECT id FROM runs WHERE status NOT IN ('queued','running')))");
+ exec("UPDATE usage SET model=REPLACE(model,'pending:','unconfirmed:') WHERE model LIKE 'pending:%' AND (run_id IS NULL OR run_id NOT IN (SELECT id FROM runs) OR run_id IN (SELECT id FROM runs WHERE status NOT IN ('queued','running')))");
 }
 export function outputAllowance(system:string){if(system.includes('你规划'))return 2048;if(system.includes('你是分析 Agent')||system.includes('你是质疑 Agent'))return 3072;if(system.includes('只修复'))return 6144;return 6144;}
 export function estimateReservation(system:string,prompt:string,images:number,maxTokens:number){const text=system+prompt,ascii=(text.match(/[\x00-\x7F]/g)||[]).length;return Math.ceil((text.length-ascii)*1.5+ascii*0.6)+images*8192+maxTokens+2048;}
