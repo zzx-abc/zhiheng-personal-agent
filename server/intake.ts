@@ -1,9 +1,12 @@
+import {tagSchema,linkSchema} from './memory-learning';
 import {z} from 'zod';
 import {recalledTopics} from './conversation-context';
 import {all,one,exec,transaction,event,bump,revision,now,type Run,type RecordRow,type Topic} from './db';
 import {createTopic,createTask,pauseTask,invalidateGenerated} from './store';
 import {contract,leaderFormat,leaderSchema,type ModelCall} from './model';
 export const intakeSchema=z.object({
+ tags:z.array(tagSchema).max(10).default([]),history_links:z.array(linkSchema).max(3).default([]),
+ link_feedback:z.object({id:z.string(),decision:z.enum(['confirmed','rejected']),quote:z.string().min(2).max(300),note:z.string().max(500)}).nullable().default(null),
  context_relation:z.enum(['independent','continue']).default('continue'),memory_query:z.string().min(2).max(300).nullable().default(null),memory_reason:z.string().max(300).default(''),
  route:z.enum(['chat','review','check']),data_need:z.enum(['none','market_data','official_search']).default('none'),review_required:z.boolean().default(false),understanding:z.string().max(300),first_help:z.string().max(1200),
  focus:z.object({id:z.string().nullable(),title:z.string().max(60),question:z.string().max(500),quote:z.string().max(500)}).nullable(),
@@ -18,9 +21,12 @@ export function intakeContext(context:string){
 }
 export async function understand(call:ModelCall,context:string,images:{mime:string;data:string}[]){
  const topics=JSON.parse(context).candidateTopics||[];
- return resolveIntakeRoute(intakeSchema.parse(await call(contract+`你先理解用户要完成的任务，不让用户管理Agent。输出JSON：{context_relation:"independent或continue",memory_query:"确实需要历史时的具体检索词，否则null",memory_reason:"历史能解决本次哪个具体缺口，不检索则空",route:"chat"|"review"|"check",data_need:"none"|"market_data"|"official_search",review_required:涉及实质决策比较时true否则false,understanding:"一句简短的具体理解，不许泛泛说我会帮你分析",first_help:"最多三句先提供有用判断：核心因果链和首要缺口。不是完成承诺，不冒充查证结论；简单问题可空",focus:null或{id:已存在关注ID或null,title:短名称,question:用户正在验证的问题,quote:本次原话的逐字片段},followup:null或{title,question,quote:本次明确委托原话},pause_focus:false,reply:null或完整回答对象}。
+ return resolveIntakeRoute(intakeSchema.parse(await call(contract+`你先理解用户要完成的任务，不让用户管理Agent。输出JSON：{tags:[{kind:"entity/theme/intent/horizon",label:"简短检索标签",quote:"本次原文逐字片段"}],history_links:[],link_feedback:null,context_relation:"independent或continue",memory_query:"确实需要历史时的具体检索词，否则null",memory_reason:"历史能解决本次哪个具体缺口，不检索则空",route:"chat"|"review"|"check",data_need:"none"|"market_data"|"official_search",review_required:涉及实质决策比较时true否则false,understanding:"一句简短的具体理解，不许泛泛说我会帮你分析",first_help:"最多三句先提供有用判断：核心因果链和首要缺口。不是完成承诺，不冒充查证结论；简单问题可空",focus:null或{id:已存在关注ID或null,title:短名称,question:用户正在验证的问题,quote:本次原话的逐字片段},followup:null或{title,question,quote:本次明确委托原话},pause_focus:false,reply:null或完整回答对象}。
 先判断本次是不是独立片段，再考虑记忆。没有回复父片段时context_relation=independent；有父片段且是追问、纠正、继续核实时为continue。即使界面仍停在旧讨论，用户开始一个自足的新任务（例如“分析今天早上的盘面并记录”）也用independent，不默认是在看其旧持仓。只是同一公司、同一行业、相近关键词不构成接续。检索不会合并原文或自动接续关注。
-记忆默认不检索：普通记录、市场概览、知识解释和已有材料足够的问题用memory_query=null。用户明确回顾/对比过去/纠正以前的理解，或“又怕跟上次一样”等历史指代对本次有实质帮助时，才填写具体检索词及理由。当前回复链已经足够则不用全库检索。contextBoundary.historyRequested=true表示已完成一次按需检索，不再要求检索；只用本次返回且真正相关的资料，没有找到就坦诚说明或问一个关键问题。检索没有命中不是用户从未说过。
+标签是检索线索，不是用户事实。给本次表达提取最多6个tags。entity只用原文明确写出的公司/证券名称或代码，不补全猜测；theme可归纳订单兑现、行业景气等主题；intent可用原始依据、考虑调整、验证条件；horizon只能引用明确的短线/中线/长期等表达。每个quote必须逐字来自current.text。不用冲动、贪婪、违规等标签。不把“提到某公司”当成持有。原始依据和考虑调整是这条文本的任务性质，不是用户交易原则。
+先判断完成当前任务缺少什么背景，而不是等用户要求关联。当用户考虑调整、判断新信息是否影响原逻辑、表达可能与已有背景相关的犹豫时，可以主动填写memory_query与memory_reason，即使没有“上次/之前”等词。记忆不是每次都要检索：独立市场概览、概念解释、材料已足够的任务仍用null。当前回复链足够时不全库检索。contextBoundary.historyRequested=true说明程序已经检索，不再次提出查询。
+检索返回的是候选。在historyRequested=true时，逐一判断哪些原文对当前任务有用，用history_links选择最多3个独立用户原文来源，不合适就[]。格式：[{source_id:"history中原文ID",relation:"basis/compare/supports/challenges/recall",reason:"具体为什么对本次有用及局限",current_quote:"当前原文的逐字片段",target_quote:"候选历史原文逐字片段",task:0到1,entity:0到1,question:0到1,validity:0到1}]。四项分别是任务帮助、对象对应、问题及时间尺度匹配、原文有效性；不确定用0.5或更低。来源评分只是启发式，不是概率。共同标签只用于发现，不能替代证据。不同证券不选basis；用户明确比较时可compare。对象未知不能认定是同一笔持仓，在reason明确边界。撤回版本不得作为当前依据。relationshipFeedback中的rejected属于用户纠正，同一讨论不得重复采用被否认的关系；用户明确要求回看原文或重新比较时，可以作为回顾材料，但不得把旧关系当成成立。相似情境的否认要重新核对，不据此推断用户永久偏好。
+用户明确指出某次历史关联不对，或明确认可它时，可从recentMemoryLinks选择link_feedback.id，quote逐字引用用户对关联的反馈；不能把没有反对、点开卡片、赞同投资结论当作认可关联。不清楚在指哪条关系时不写link_feedback，不猜。这个动作由程序执行，只有回执才代表已记住纠正。历史关系不合并原文，也不创建交易规则。
 独立片段的focus一般为null。只有用户明确表达持续关注、验证假设、决策困惑或委托跟进才建立新focus；“做个记录”、泛盘面观察不创建持续关注。只有当前确实在接续/纠正同一待验证问题时才能选候选focus.id，不能仅凭名称相关就挂上旧关注。对历史作比较可以只引用，不必更新那个关注的工作状态。context_relation=independent时不得继承父片段中的持仓、市场对象或判断，reply必须以新问题为准。
 先独立决定data_need，再决定审议深度。当前有明确标的，且回答依赖其走势/成交量/相对强弱时data_need=market_data；判断需要公告原文时official_search。缺的是个人动机或只梳理已提供逻辑时none。只交代未来跟进、回顾或纠正时none。不允许一边说“需要行情核实”，一边选择none把可执行任务留给用户。data_need非none时程序先执行工具，仍可review_required=true。不以其他股票的旧快照代替本次标的。
 工具取数与独立审议分别决定：check仅表示先获取证据；若用户还要求比较原有理由与新选择、检验调整依据，review_required=true，即使只获取报价也要独立审议。纯粹问价、回顾、纠正的review_required=false。

@@ -1,3 +1,4 @@
+import {ensureRuleTags,tagsFor} from './memory-learning';
 import {createHash} from 'node:crypto';
 import {db,all,one,exec,transaction,now,type RecordRow,type Memory} from './db';
 import {stateSourceIds,type WorkingState,type StateVersion} from './working-state';
@@ -23,6 +24,8 @@ export function syncCards(){
  }
  transaction(()=>{
   for(const r of all<RecordRow>("SELECT * FROM records WHERE role='user'")){
+   if(['relation_feedback','tag_feedback'].includes(r.kind))continue;
+   ensureRuleTags(r);
    for(let i=0;i<r.content.length;i+=420){const body=r.content.slice(i,i+500);put({id:`raw:${r.id}:${i}`,topic_id:r.topic_id,kind:r.kind==='correction'?'correction':'record',title:r.content.replace(/\s+/g,' ').slice(0,32),body,origin:'original',status:withdrawnSources.has(r.id)?'historical':'original',source_ids:JSON.stringify([r.id]),created_at:r.created_at,parent_id:r.topic_id});}
   }
   for(const m of all<Memory>('SELECT * FROM memories'))put({id:'memory:'+m.id,topic_id:m.topic_id,kind:m.kind,title:m.kind==='principle'?(m.status==='active'?'你认可的原则':'待认可的原则'):m.kind==='correction'?'修正后的理解':'个人背景',body:m.content,origin:m.status==='active'?'confirmed':'model',status:m.status==='withdrawn'?'withdrawn':m.status,source_ids:JSON.stringify([m.source_id]),created_at:m.updated_at,parent_id:m.topic_id});
@@ -36,6 +39,6 @@ export function syncCards(){
   for(const card of all<{id:string}>('SELECT id FROM memory_cards'))if(!live.has(card.id)){exec('DELETE FROM memory_cards WHERE id=?',card.id);exec('DELETE FROM memory_cards_fts WHERE card_id=?',card.id);}
  });
 }
-export function cardSnapshot(){syncCards();return all<MemoryCard>('SELECT * FROM memory_cards ORDER BY created_at DESC').map(({vector,vector_model,hash,...c})=>({...c,sourceIds:JSON.parse(c.source_ids),indexed:!!vector}));}
+export function cardSnapshot(){syncCards();return all<MemoryCard>('SELECT * FROM memory_cards ORDER BY created_at DESC').map(({vector,vector_model,hash,...c})=>({...c,sourceIds:JSON.parse(c.source_ids),indexed:!!vector,tags:tagsFor(JSON.parse(c.source_ids))}));}
 export function retrievalStatus(){return {cards:one<{n:number}>('SELECT count(*) n FROM memory_cards')?.n||0,indexed:one<{n:number}>("SELECT count(*) n FROM memory_cards WHERE vector IS NOT NULL AND status IN ('active','candidate','original')")?.n||0,state:one<{value:string}>("SELECT value FROM retrieval_status WHERE key='state'")?.value||'pending',error:one<{value:string}>("SELECT value FROM retrieval_status WHERE key='error'")?.value||null};}
 export function lexicalCards(query:string){const q=terms(query).split(' ').filter(Boolean).slice(0,24).map(x=>'"'+x.replaceAll('"','""')+'"').join(' OR ');return q?all<MemoryCard>("SELECT c.* FROM memory_cards_fts f JOIN memory_cards c ON c.id=f.card_id WHERE memory_cards_fts MATCH ? AND c.status IN ('active','candidate','original') ORDER BY bm25(memory_cards_fts) LIMIT 24",q):[];}

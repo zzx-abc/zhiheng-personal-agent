@@ -67,7 +67,7 @@ test('Explicit recall retrieves sources without merging fragments or rewriting a
  await processRun(claim()!,async(system,prompt)=>{
   const c=JSON.parse(prompt.split('\n可接续')[0].split('\n程序执行回执')[0]);
   if(system.includes('你先理解用户要完成的任务')){
-   if(c.contextBoundary.historyRequested){recalled=true;assert.ok(prompt.includes('订单质量'));return plan();}
+   if(c.contextBoundary.historyRequested){recalled=true;assert.ok(prompt.includes('订单质量'));return plan({history_links:[{source_id:original,relation:'recall',reason:'测试：找回关注依据',current_quote:'为什么关注青杉设备',target_quote:'关注的是订单质量',task:1,entity:1,question:1,validity:1}]});}
    assert.ok(!prompt.includes('订单质量'));return plan({memory_query:'青杉设备 订单质量',memory_reason:'找回用户当时关注的依据'});
   }
   assert.ok(prompt.includes(original));assert.ok(!prompt.includes('UNRELATED_PRICE'));return {...answer,reasons:[{text:'测试：依据原话',sources:[original]}]};

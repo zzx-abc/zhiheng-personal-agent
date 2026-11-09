@@ -1,3 +1,4 @@
+import {saveTags,tagsFor,proactiveRecall,blockedSources,validateLinks,selectedLinks,saveLinks,applyLinkFeedback,recentLinks,relationContext} from './memory-learning';
 import {ZodError} from 'zod';
 import {packContext,leaderInput} from './context-budget';
 import {retrieve} from './retrieval';
@@ -29,14 +30,17 @@ function phase(run:Run,name:string,detail:unknown={}){alive(run);exec('UPDATE ru
 export async function contextFor(run:Run,record:RecordRow,topic:Topic|undefined,warnings:string[],understandingOnly=false){
  const request=understandingOnly?null:recallRequest(run.id);
  const retrieved=request?await retrieve(request.query,run.topic_id,run.id):{mode:'未调用历史检索',cards:[],records:[]};
- const branch=replyHistory(record.id);
+ const selection=selectedLinks(run.id);const denied=blockedSources(record.id);
+ if(selection!==null){const chosen=new Set(selection.map(l=>l.source_id));retrieved.records=retrieved.records.filter(r=>chosen.has(r.id));retrieved.cards=retrieved.cards.filter(c=>(JSON.parse(c.source_ids) as string[]).every(id=>chosen.has(id)));}
+ const branch=replyHistory(record.id).filter(r=>!denied.has(r.id));
  const stateRow=understandingOnly?undefined:currentState(run.topic_id);
- const workingState:WorkingState|null=stateRow?JSON.parse(stateRow.content):null;
+ let workingState:WorkingState|null=stateRow?JSON.parse(stateRow.content):null;
+ if(workingState&&stateSourceIds(workingState).some(id=>denied.has(id)))workingState=null;
  const stateSources=workingState?stateSourceIds(workingState):[];
  const stateRecords=stateSources.flatMap(source=>{const row=one<RecordRow>("SELECT * FROM records WHERE id=? AND role='user'",source);return row?[row]:[];});
- const history=[...new Map([...retrieved.records,...(captureContext(record.id)?branch:run.topic_id?all<RecordRow>("SELECT * FROM records WHERE role='user' AND topic_id=? AND id!=? ORDER BY created_at DESC LIMIT 2",run.topic_id,record.id):[]),...stateRecords].filter(x=>x.id!==record.id&&x.created_at<=record.created_at).map(x=>[x.id,x])).values()];
+ const history=[...new Map([...retrieved.records,...(captureContext(record.id)?branch:run.topic_id?all<RecordRow>("SELECT * FROM records WHERE role='user' AND topic_id=? AND id!=? ORDER BY created_at DESC LIMIT 2",run.topic_id,record.id):[]),...stateRecords].filter(x=>x.id!==record.id&&!denied.has(x.id)&&x.created_at<=record.created_at).map(x=>[x.id,x])).values()];
  const recalledSources=new Set(retrieved.records.map(r=>r.id));
- const memories=understandingOnly?[]:all<Memory>("SELECT * FROM memories WHERE status='active' ORDER BY updated_at DESC").filter(m=>(!!run.topic_id&&m.topic_id===run.topic_id)||recalledSources.has(m.source_id)).slice(0,25);
+ const memories=understandingOnly?[]:all<Memory>("SELECT * FROM memories WHERE status='active' ORDER BY updated_at DESC").filter(m=>!denied.has(m.source_id)&&((!!run.topic_id&&m.topic_id===run.topic_id)||recalledSources.has(m.source_id))).slice(0,25);
  const evidence=all<Evidence>("SELECT * FROM evidence WHERE run_id=?",run.id);
  const priorAnalyses=!captureContext(record.id)&&run.topic_id?all<{id:string;result:string;finished_at:string}>("SELECT id,result,finished_at FROM runs WHERE topic_id=? AND id!=? AND record_id!=? AND status IN ('succeeded','partial') AND result IS NOT NULL ORDER BY finished_at DESC LIMIT 4",run.topic_id,run.id,record.id):history.length?all<{id:string;result:string;finished_at:string}>(`SELECT id,result,finished_at FROM runs WHERE record_id IN (${history.map(()=>'?').join(',')}) AND status IN ('succeeded','partial') AND result IS NOT NULL ORDER BY finished_at DESC LIMIT 4`,...history.map(r=>r.id)):[];
  const previousEvidence=!understandingOnly&&run.topic_id?all<Evidence>("SELECT e.* FROM evidence e JOIN runs r ON e.run_id=r.id WHERE r.topic_id=? AND r.id!=? AND r.status IN ('succeeded','partial') ORDER BY e.retrieved_at DESC LIMIT 8",run.topic_id,run.id):[];
@@ -51,8 +55,8 @@ export async function contextFor(run:Run,record:RecordRow,topic:Topic|undefined,
  const candidateIds=new Set(retrieved.records.map(r=>r.topic_id).filter(Boolean));
  const candidateTopics=all<Topic>("SELECT * FROM topics WHERE status='active'").filter(t=>candidateIds.has(t.id)||t.id===run.topic_id);
  const replyContext=understandingOnly?priorAnalyses.filter(a=>branch.some(r=>one<{record_id:string}>('SELECT record_id FROM runs WHERE id=?',a.id)?.record_id===r.id)).slice(0,2).map(a=>({runId:a.id,judgment:(JSON.parse(a.result) as Leader).judgment.slice(0,800),type:'当前回复链中的模型回答，不是用户事实'})):[];
- const context=JSON.stringify(packContext({replyContext,contextBoundary:{hasReplyParent:!!captureContext(record.id)?.parent_id,historyRequested:!!request,reason:request?.reason||null,notice:'本次原文是任务中心。历史命中只是参考，不表示同一件事、当前持仓或旧判断仍有效。独立片段不要输出无关的判断变化。'},candidateTopics,retrievedCards:retrieved.cards.map(c=>({id:c.id,kind:c.kind,body:c.body,status:c.status,origin:c.origin,sourceIds:JSON.parse(c.source_ids)})),retrievalMethod:retrieved.mode,operationalState:{focusStatus:topic?.status||null,tasks:delegatedTasks,authority:'程序当前状态，高于历史对话和工作状态中关于暂停/恢复的旧描述；不代表投资假设成立'},workingState:workingState?{asOf:stateRow!.created_at,kind:'模型维护的工作状态，非实时事实或用户交易规则',...workingState}:null,delegatedTasks,researchOutcome:researchOutcome?JSON.parse(researchOutcome.detail):null,allowed_source_ids:[...allowed],runtime:{currentDateShanghai:chinaDate(),timezone:'Asia/Shanghai',provider:'Kimi',endpoint:'https://api.moonshot.cn/v1/chat/completions',model:config().model,tools:['腾讯沪深A股/常用指数报价、前复权日K及共同日期比较','有限官方公告搜索'],engine:config().engine==='dsh'?'DeepSeek Harness':'直接 Kimi API',note:'本次通过以上配置调用模型生成回答；仅证明本次模型响应，不代表外部检索成功。'},current:{id:record.id,text:record.content,date:record.created_at},topic,history:history.map(x=>({id:x.id,text:x.content,date:x.created_at,kind:x.kind})),memories,evidence:evidence.map(e=>e.level==='market'?{...e,body:marketContext(e.body)}:e),previousEvidence:previousEvidence.map(e=>({...e,body:e.level==='market'?marketContext(e.body):e.body.slice(0,5000)})),priorModelJudgments:priorAnalyses.map(a=>({runId:a.id,date:a.finished_at,report:((r:Leader)=>({judgment:r.judgment,reasons:r.reasons,uncertainties:r.uncertainties,changes:r.changes}))(JSON.parse(a.result)),type:'模型历史判断，不能当用户观点或独立事实'})),imageSourceOrder:imageSources.map(x=>x.record_id),scope:run.mode==='check'?'本次按需调用工具；行情以腾讯返回时间及日K区间为准，不保证实时，旧行情不能当今天的数据；公告范围见执行记录。discovery级别仅发现线索。':'未查询外部最新信息；图片为用户提供快照。',executionWarnings:warnings}));
- return {context,allowed,images,memories};
+ const context=JSON.stringify(packContext({currentTags:tagsFor([record.id]),relationshipFeedback:relationContext(record.id),recentMemoryLinks:recentLinks(record.id).map(l=>({id:l.id,relation:l.relation,targetId:l.target_id,status:l.status,reason:l.status==='rejected'?'用户已否认此关联，不再引用其原文':l.reason.slice(0,150)})),selectedMemoryLinks:selection,replyContext,contextBoundary:{hasReplyParent:!!captureContext(record.id)?.parent_id,historyRequested:!!request,reason:request?.reason||null,notice:'本次原文是任务中心。历史命中只是参考，不表示同一件事、当前持仓或旧判断仍有效。独立片段不要输出无关的判断变化。'},candidateTopics,retrievedCards:retrieved.cards.map(c=>({id:c.id,kind:c.kind,body:c.body,status:c.status,origin:c.origin,sourceIds:JSON.parse(c.source_ids)})),retrievalMethod:retrieved.mode,operationalState:{focusStatus:topic?.status||null,tasks:delegatedTasks,authority:'程序当前状态，高于历史对话和工作状态中关于暂停/恢复的旧描述；不代表投资假设成立'},workingState:workingState?{asOf:stateRow!.created_at,kind:'模型维护的工作状态，非实时事实或用户交易规则',...workingState}:null,delegatedTasks,researchOutcome:researchOutcome?JSON.parse(researchOutcome.detail):null,allowed_source_ids:[...allowed],runtime:{currentDateShanghai:chinaDate(),timezone:'Asia/Shanghai',provider:'Kimi',endpoint:'https://api.moonshot.cn/v1/chat/completions',model:config().model,tools:['腾讯沪深A股/常用指数报价、前复权日K及共同日期比较','有限官方公告搜索'],engine:config().engine==='dsh'?'DeepSeek Harness':'直接 Kimi API',note:'本次通过以上配置调用模型生成回答；仅证明本次模型响应，不代表外部检索成功。'},current:{id:record.id,text:record.content,date:record.created_at},topic,history:history.map(x=>({id:x.id,text:x.content,date:x.created_at,kind:x.kind,relationToCurrent:branch.some(b=>b.id===x.id)?'reply_chain':recalledSources.has(x.id)?'retrieved_reference':'working_state_source',tags:tagsFor([x.id])})),memories,evidence:evidence.map(e=>e.level==='market'?{...e,body:marketContext(e.body)}:e),previousEvidence:previousEvidence.map(e=>({...e,body:e.level==='market'?marketContext(e.body):e.body.slice(0,5000)})),priorModelJudgments:priorAnalyses.map(a=>({runId:a.id,date:a.finished_at,report:((r:Leader)=>({judgment:r.judgment,reasons:r.reasons,uncertainties:r.uncertainties,changes:r.changes}))(JSON.parse(a.result)),type:'模型历史判断，不能当用户观点或独立事实'})),imageSourceOrder:imageSources.map(x=>x.record_id),scope:run.mode==='check'?'本次按需调用工具；行情以腾讯返回时间及日K区间为准，不保证实时，旧行情不能当今天的数据；公告范围见执行记录。discovery级别仅发现线索。':'未查询外部最新信息；图片为用户提供快照。',executionWarnings:warnings}));
+ return {context,allowed,images,memories,candidateIds:new Set(retrieved.records.map(r=>r.id))};
 }
 export async function processRun(run:Run,testCall?:ModelCall){const controller=new AbortController();const timeout=setTimeout(()=>controller.abort(),330000);const heartbeat=setInterval(()=>{const r=one<Run>('SELECT * FROM runs WHERE id=?',run.id);if(!r||r.status!=='running'||revision()!==run.revision)controller.abort();else exec('UPDATE runs SET heartbeat=? WHERE id=?',now(),run.id);},1500);
  try{
@@ -72,6 +76,16 @@ export async function processRun(run:Run,testCall?:ModelCall){const controller=n
  if(run.mode==='auto'){
   phase(run,'understanding');const initial=await contextFor(run,record,topic,[],true);
   intake=await understand(call,initial.context,initial.images);alive(run);
+  saveTags(record,intake.tags);
+  let feedbackApplied=false;
+  if(intake.link_feedback){const f=intake.link_feedback;
+   if(record.content.includes(f.quote)&&/(关联|联系|同一件|不是这件事|两件事|串在|这条历史)/.test(f.quote)&&recentLinks(record.id).some(l=>l.id===f.id)){
+    applyLinkFeedback(f.id,f.decision,f.note,record.id);run.revision=revision();exec('UPDATE runs SET revision=? WHERE id=?',run.revision,run.id);
+    event(run.id,'relationship_feedback_applied',{id:f.id,decision:f.decision});feedbackApplied=true;
+   }
+  }
+  const proactive=!intake.memory_query&&!feedbackApplied?proactiveRecall(record):null;
+  if(proactive){intake.memory_query=proactive.query;intake.memory_reason=proactive.reason;}
   if(intake.context_relation==='independent'&&captureContext(record.id)?.parent_id){
    detachCapture(run,record);topic=undefined;event(run.id,'fragment_separated',{reason:'本次是独立问题，不继承上一条的关注状态'});
   }
@@ -79,6 +93,8 @@ export async function processRun(run:Run,testCall?:ModelCall){const controller=n
    event(run.id,'memory_requested',{query:intake.memory_query,reason:intake.memory_reason});
    const recalled=await contextFor(run,record,topic,[]);
    intake=await understand(call,recalled.context,recalled.images);alive(run);
+   const links=validateLinks(record,intake.history_links,recalled.candidateIds);
+   event(run.id,'memory_selected',{links,scoring:'0.40 task + 0.20 entity + 0.25 question + 0.15 validity; threshold 0.75; heuristic, not probability'});
    if(intake.context_relation==='independent'&&captureContext(record.id)?.parent_id){
     detachCapture(run,record);topic=undefined;event(run.id,'fragment_separated',{reason:'历史核对后确认是独立问题，仅引用相关原文'});
    }
@@ -95,16 +111,17 @@ export async function processRun(run:Run,testCall?:ModelCall){const controller=n
  if(run.mode==='check'&&!reused){try{warnings.push(...await research(run,record,topic,call,controller.signal,()=>alive(run),(name,detail)=>phase(run,name,detail)));}catch(e){alive(run);warnings.push('本次联网核实未完成：'+(e instanceof Error?e.message:'接口失败')+'。以下仅分析已提供材料，不能当作已核实的最新事实。');event(run.id,'search_unavailable',{message:warnings[0]});}}
  phase(run,'context');
  const prepared=await contextFor(run,record,topic,warnings);const {allowed,images,memories}=prepared;
- const context=prepared.context+'\n程序执行回执（只有这里的动作确实完成了）：'+JSON.stringify(receipt||{});
+ const feedbackReceipt=one<{detail:string}>("SELECT detail FROM events WHERE run_id=? AND type='relationship_feedback_applied' ORDER BY rowid DESC LIMIT 1",run.id);
+ const context=prepared.context+'\n程序执行回执（只有这里的动作确实完成了）：'+JSON.stringify({...receipt,relationshipFeedbackApplied:feedbackReceipt?JSON.parse(feedbackReceipt.detail):null});
  const save=(name:string,result:Review)=>{alive(run);exec('INSERT INTO reports VALUES(?,?,?,?,?)',id(),run.id,name,JSON.stringify(result),now());event(run.id,'agent_completed',{agent:name});};
  const quoteEvent=one<{detail:string}>("SELECT detail FROM events WHERE run_id=? AND type='market_data_result' ORDER BY rowid DESC LIMIT 1",run.id);
  const simpleQuote=quoteEvent&&JSON.parse(quoteEvent.detail).observation==='quote'&&intake&&!intake.review_required;
  phase(run,run.mode==='chat'||simpleQuote?'answering':'deliberating');
  let leader:Leader;
- if(run.mode==='chat'||simpleQuote){const mustRefresh=!!run.topic_id||simpleQuote||!!recallRequest(run.id)||!!one("SELECT id FROM events WHERE run_id=? AND type='fragment_separated'",run.id)||receipt&&(receipt.contextChanged||receipt.focusUpdated||receipt.taskId||receipt.paused||receipt.needsTarget);leader=leaderSchema.parse((!mustRefresh?intake?.reply:null)??await call(contract+'严格依据程序执行回执报告保存、跟进或暂停。needsTarget=true表示没执行，不能说已完成，只问一个关键问题：要跟进或暂停哪个方向/公司？taskId存在只表示已保存手动委托，不代表查过或自动监测。'+leaderFormat,context,leaderSchema,images));assertCitations(leader,allowed);save('leader',leader);}
+ if(run.mode==='chat'||simpleQuote){const mustRefresh=!!one("SELECT id FROM events WHERE run_id=? AND type='relationship_feedback_applied'",run.id)||!!run.topic_id||simpleQuote||!!recallRequest(run.id)||!!one("SELECT id FROM events WHERE run_id=? AND type='fragment_separated'",run.id)||receipt&&(receipt.contextChanged||receipt.focusUpdated||receipt.taskId||receipt.paused||receipt.needsTarget);leader=leaderSchema.parse((!mustRefresh?intake?.reply:null)??await call(contract+'严格依据程序执行回执报告保存、跟进或暂停。needsTarget=true表示没执行，不能说已完成，只问一个关键问题：要跟进或暂停哪个方向/公司？taskId存在只表示已保存手动委托，不代表查过或自动监测。'+leaderFormat,context,leaderSchema,images));assertCitations(leader,allowed);save('leader',leader);}
  else leader=await deliberate(call,context,allowed,images,save,reused);
  const explicitCorrection=/(不是|理解错|纠正|更正|不再|取消|撤回|改为)/.test(record.content);
- const willCorrect=explicitCorrection&&(leader.withdraw_memory_ids.length>0||/(理解错|更正|纠正|不是我的|我只是[\s\S]{0,100}不是)/.test(record.content));
+ const willCorrect=!one("SELECT id FROM events WHERE run_id=? AND type='relationship_feedback_applied'",run.id)&&explicitCorrection&&(leader.withdraw_memory_ids.length>0||/(理解错|更正|纠正|不是我的|我只是[\s\S]{0,100}不是)/.test(record.content));
  if(willCorrect&&((run.topic_id===originalTopic&&hadWorkingState)||currentState(run.topic_id))&&!leader.working_state){
   phase(run,'updating_state');
   leader.working_state=workingStateSchema.parse(await call(contract+workingStateFormat+'本次用户明确纠正了理解。必须对照原文修正现有状态；不受影响的部分保留，不把整件事丢掉。本次只输出状态对象本身，不要working_state外层或其他回复字段。',context+'\n本轮已形成的回答：'+JSON.stringify(leader),workingStateSchema,images));
@@ -134,6 +151,7 @@ export async function processRun(run:Run,testCall?:ModelCall){const controller=n
  const quoted=/[“「"']\s*$/.test(prefix)||/(他说|她说|朋友说|转发|摘录|群里说)[：:\s]*$/.test(prefix);
  const explicitSimple=['goal','preference'].includes(m.kind)&&/^我(最近|目前|现在|正在|希望|想|喜欢|偏好|更喜欢|的目标|目标是)/.test(m.quote)&&!quoted;
  exec('INSERT INTO memories VALUES(?,?,?,?,?,?,?,?,?,?)',id(),run.topic_id,m.kind,explicitSimple?m.quote:m.content,explicitSimple?'active':'candidate',record.id,m.quote,at,at,null);}
+ saveLinks(run,record);
  if(leader.working_state)saveState(run,leader.working_state,allowed);
  if(run.mode==='check'&&!leader.evidence_sufficient&&!warnings.length)warnings.push('已执行检索，但材料仍不足以回答核心问题；未确认不等于事实不存在。');
  const status=warnings.length?'partial':'succeeded';

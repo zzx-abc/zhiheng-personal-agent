@@ -17,6 +17,8 @@ export function recallRequest(runId:string):{query:string;reason:string}|null{
  return row?JSON.parse(row.detail):null;
 }
 export function recalledTopics(runId:string){
+ const selected=one<{detail:string}>("SELECT detail FROM events WHERE run_id=? AND type='memory_selected' ORDER BY rowid DESC LIMIT 1",runId);
+ if(selected){const ids=new Set<string>();for(const l of JSON.parse(selected.detail).links||[]){const topic=one<{topic_id:string|null}>('SELECT topic_id FROM records WHERE id=?',l.source_id)?.topic_id;if(topic)ids.add(topic);}return ids;}
  const ids=new Set<string>();
  for(const row of all<{detail:string}>("SELECT detail FROM events WHERE run_id=? AND type='memory_retrieved'",runId)){
   for(const card of JSON.parse(row.detail).cards||[]){
