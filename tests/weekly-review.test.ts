@@ -12,6 +12,7 @@ const at=new Date('2026-11-09T02:00:00.000Z');
 function reset(){for(const t of ['weekly_feedback','weekly_sources','weekly_versions','weekly_reviews','runs','records','topics'])sql.exec(`DELETE FROM ${t}`);sql.exec('UPDATE weekly_schedule SET enabled=0,next_at=NULL,last_checked=NULL');saveConfig('TEST-FIXTURE-NOT-A-REAL-KEY','kimi-k3',1000000);}
 function capture(text:string,date='2026-11-05T03:00:00.000Z'){const key=store.capture('测试样例：'+text,null,'note');sql.exec('UPDATE records SET created_at=? WHERE id=?',date,key);return key;}
 const sample=(id:string,quote:string)=>({focus:[{text:'测试归纳：记录在思考这个问题',citations:[{source_id:id,quote}]}],changes:[],unresolved:[]});
+function selection(prompt:string,source:string){const c=JSON.parse(prompt),passage=c.sources.find((s:any)=>s.id===source)?.passages[0];assert.ok(passage);return {focus:[{text:'测试：根据原文片段整理',evidence_ids:[passage.id]}],changes:[],unresolved:[]};}
 function runRow(id:string){return sql.one<any>('SELECT * FROM runs WHERE id=?',id)!;}
 test('Weekly schedule uses Shanghai Monday 09:00 and the preceding full civil week',()=>{
  assert.equal(weekly.latestWeeklySlot(new Date('2026-11-09T00:59:59Z')),'2026-11-02T01:00:00.000Z');
@@ -60,23 +61,23 @@ test('Unknown source, invented quotes, unsupported changes and unrelated old-onl
 });
 test('Successful report stays separate from memory; scoped corrections create a new version and persist',async()=>{
  reset();const source=capture('这个想法只是担心'),r=weekly.requestWeeklyReview(at);
- await weekly.processWeekly(claim()!,async()=>sample(source,'这个想法只是担心'));
+ await weekly.processWeekly(claim()!,async(_sys,prompt)=>selection(prompt,source));
  assert.equal(runRow(r.runId).status,'succeeded');assert.equal(sql.all("SELECT * FROM records WHERE role='assistant'").length,0);
  weekly.correctWeeklyReview(r.reviewId,'测试纠正：这是两件事，不代表观点发生变化');
  assert.equal(runRow(r.runId).status,'stale');const retry=weekly.retryWeeklyReview(r.reviewId);
- await weekly.processWeekly(claim()!,async(_sys,prompt)=>{assert.ok(prompt.includes('这是两件事'));return sample(source,'这个想法只是担心');});
+ await weekly.processWeekly(claim()!,async(_sys,prompt)=>{assert.ok(prompt.includes('这是两件事'));return selection(prompt,source);});
  assert.equal(runRow(retry.runId).status,'succeeded');assert.equal(weekly.weeklySnapshot().versions.length,2);
  const cards=store.snapshot().cards;assert.ok(!cards.some(c=>c.body.includes('这是两件事')),'Review correction must not become a global trading memory');
  const {DatabaseSync}=await import('node:sqlite');const reopened=new DatabaseSync(path.join(process.env.AGENT_DATA_DIR!,'agent.sqlite'));assert.equal((reopened.prepare('SELECT count(*) n FROM weekly_versions').get() as any).n,2);reopened.close();
 });
 test('Correction during generation prevents old result from committing',async()=>{
  reset();const source=capture('我尚未确认'),r=weekly.requestWeeklyReview(at);
- await weekly.processWeekly(claim()!,async()=>{weekly.correctWeeklyReview(r.reviewId,'测试：应理解为研究问题');return sample(source,'我尚未确认');});
+ await weekly.processWeekly(claim()!,async(_sys,prompt)=>{weekly.correctWeeklyReview(r.reviewId,'测试：应理解为研究问题');return selection(prompt,source);});
  assert.equal(runRow(r.runId).result,null);assert.equal(runRow(r.runId).status,'cancelled');
 });
 test('Deleting a source purges derived report text; deleting only a review preserves investment originals',async()=>{
  reset();const source=capture('这段原话需要保密'),r=weekly.requestWeeklyReview(at);
- await weekly.processWeekly(claim()!,async()=>sample(source,'这段原话需要保密'));
+ await weekly.processWeekly(claim()!,async(_sys,prompt)=>selection(prompt,source));
  sql.exec('DELETE FROM records WHERE id=?',source);assert.equal(runRow(r.runId).result,null);assert.equal(runRow(r.runId).status,'stale');
  const keep=capture('这条原话要保留');weekly.deleteWeeklyReview(r.reviewId);
  assert.ok(sql.one('SELECT id FROM records WHERE id=?',keep));assert.equal(sql.all('SELECT * FROM weekly_versions').length,0);
@@ -100,5 +101,30 @@ test('Deleted in-flight review keeps uncertain charges accountable instead of pe
  sql.exec('INSERT INTO usage VALUES(?,?,?,?,?)',sql.id(),r.runId,'pending:fixture',100,sql.now());
  weekly.deleteWeeklyReview(r.reviewId);const {recoverPendingUsage}=await import('../server/usage-budget');recoverPendingUsage();
  assert.equal(sql.one<any>('SELECT model FROM usage')?.model,'unconfirmed:fixture');sql.exec('DELETE FROM usage');
+});
+test('Excerpt IDs expand to verbatim originals including punctuation, whitespace and long sentences',async()=>{
+ reset();const source=capture('原话：10 月 28 日开始观察，\n“不是规则”；仍未成交。'+ '长句😀'.repeat(80));
+ const r=weekly.requestWeeklyReview(at),context=await weekly.weeklyContext(sql.one<any>('SELECT * FROM weekly_reviews WHERE id=?',r.reviewId)!);
+ const {catalog,prompt}=weekly.weeklyEvidence(context),selected=selection(prompt,source);
+ const resolved=weekly.resolveWeeklySelection(selected,catalog,context.sources);
+ const quote=resolved.focus[0].citations[0].quote;
+ assert.ok(context.sources[0].text.includes(quote));assert.equal(resolved.focus[0].citations[0].source_id,source);
+ for(const entry of catalog.values()){assert.ok(context.sources.find(s=>s.id===entry.source_id)!.text.includes(entry.quote));assert.ok(entry.quote.length<=300);}
+ assert.ok(prompt.length<=24000);assert.equal(JSON.parse(prompt).sources[0].text,undefined,'Do not send duplicate full text beside passages');
+});
+test('Excerpt selection rejects invented IDs, cross-source quotes and fake before/after changes',async()=>{
+ reset();const source=capture('第一句只是观察。第二句尚未成交。'),r=weekly.requestWeeklyReview(at),context=await weekly.weeklyContext(sql.one<any>('SELECT * FROM weekly_reviews WHERE id=?',r.reviewId)!);
+ const {catalog}=weekly.weeklyEvidence(context),keys=[...catalog.keys()];
+ assert.throws(()=>weekly.resolveWeeklySelection({focus:[{text:'测试',evidence_ids:['E999']}],changes:[],unresolved:[]},catalog,context.sources));
+ assert.throws(()=>weekly.resolveWeeklySelection({focus:[],changes:[{text:'测试',evidence_ids:keys.slice(0,2)}],unresolved:[]},catalog,context.sources),'Two excerpts from one original are not two independent sources');
+ const forged=new Map([['E1',{source_id:source,quote:'凭空捏造的话'}]]);
+ assert.throws(()=>weekly.resolveWeeklySelection({focus:[{text:'测试',evidence_ids:['E1']}],changes:[],unresolved:[]},forged,context.sources));
+});
+test('Invalid selection records a diagnostic and never saves an unverified report',async()=>{
+ reset();capture('研究问题尚未回答');const r=weekly.requestWeeklyReview(at);
+ await weekly.processWeekly(claim()!,async()=>({focus:[{text:'测试：不应显示',evidence_ids:['E999']}],changes:[],unresolved:[]}));
+ assert.equal(runRow(r.runId).status,'failed');assert.equal(runRow(r.runId).result,null);
+ assert.ok(sql.one("SELECT id FROM events WHERE run_id=? AND type='weekly_citation_rejected'",r.runId));
+ assert.ok(sql.one("SELECT id FROM events WHERE run_id=? AND type='weekly_evidence_catalog'",r.runId));
 });
 test.after(()=>{sql.db.close();rmSync(process.env.AGENT_DATA_DIR!,{recursive:true,force:true});});
