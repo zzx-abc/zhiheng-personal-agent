@@ -12,6 +12,8 @@ async function verifyOfflineRecovery(page){
  await expect(page.getByLabel('说说你的想法')).toHaveValue('测试样例：断线时保留这段草稿');
  await page.unroute('**/api/agent');
  await expect(page.locator('.error-banner[role=alert]')).toHaveCount(0,{timeout:8000});
+ await page.reload();
+ await expect(page.getByLabel('说说你的想法')).toHaveValue('测试样例：断线时保留这段草稿');
  await page.getByLabel('说说你的想法').fill('');
 }
 try{
@@ -20,7 +22,23 @@ try{
  await expect(page.getByRole('heading',{name:'今天，想清楚哪一步？'})).toBeVisible();await expect(page.getByLabel('说说你的想法')).toBeVisible();await expect(page.locator('.sidebar,.context-panel')).toHaveCount(0);await page.screenshot({path:'artifacts/redesign-home-desktop.png',fullPage:true});
  await verifyOfflineRecovery(page);
  await page.setViewportSize({width:390,height:844});await page.screenshot({path:'artifacts/redesign-home-mobile.png',fullPage:true});if(await page.evaluate(()=>document.documentElement.scrollWidth>innerWidth))throw Error('Mobile overflow');
- await page.getByLabel('说说你的想法').fill('测试样例：我担心订单质量，这不是交易规则。');await page.getByLabel('只记下来',{exact:true}).check();await page.getByRole('button',{name:'发送',exact:true}).click();await expect(page.getByText('测试样例：我担心订单质量，这不是交易规则。',{exact:true})).toBeVisible();await page.reload();await page.getByRole('button',{name:'找回之前的随手想法 →'}).click();await expect(page.getByText('测试样例：我担心订单质量，这不是交易规则。',{exact:true})).toBeVisible();
+ await page.getByLabel('说说你的想法').fill('测试样例：我担心订单质量，这不是交易规则。');await page.getByLabel('只记下来',{exact:true}).check();await page.getByRole('button',{name:'发送',exact:true}).click();await expect(page.getByText('测试样例：我担心订单质量，这不是交易规则。',{exact:true})).toBeVisible();await page.reload();await page.locator('.fragment-card').filter({hasText:'测试样例：我担心订单质量，这不是交易规则。'}).getByRole('button').click();await expect(page.getByText('测试样例：我担心订单质量，这不是交易规则。',{exact:true})).toBeVisible();
+ // A new home capture must not inherit the currently open fragment or its topic.
+ await page.getByRole('button',{name:'回到今天',exact:true}).click();
+ await page.getByLabel('说说你的想法').fill('测试样例：这是一条独立的盘面观察。');
+ await page.getByLabel('只记下来',{exact:true}).check();await page.getByRole('button',{name:'发送',exact:true}).click();
+ await expect(page.getByText('测试样例：这是一条独立的盘面观察。',{exact:true})).toBeVisible();
+ await expect(page.getByText('测试样例：我担心订单质量，这不是交易规则。',{exact:true})).toHaveCount(0);
+ await page.getByLabel('说说你的想法').fill('测试样例：对这条观察补充一个依据。');await page.getByLabel('只记下来',{exact:true}).check();await page.getByRole('button',{name:'发送',exact:true}).click();
+ await expect(page.getByText('测试样例：这是一条独立的盘面观察。',{exact:true})).toBeVisible();
+ await expect(page.getByText('测试样例：对这条观察补充一个依据。',{exact:true})).toBeVisible();
+ await page.reload();await expect(page.locator('.fragment-card')).toHaveCount(2);
+ await page.screenshot({path:'artifacts/fragments-home-mobile.png',fullPage:true});
+ await page.locator('.fragment-card').filter({hasText:'测试样例：这是一条独立的盘面观察。'}).getByRole('button').click();
+ const captures=(await(await fetch(base+'/api/agent')).json()).records;
+ const first=captures.find(r=>r.content==='测试样例：我担心订单质量，这不是交易规则。'),second=captures.find(r=>r.content==='测试样例：这是一条独立的盘面观察。'),reply=captures.find(r=>r.content==='测试样例：对这条观察补充一个依据。');
+ if(first.fragment_id===second.fragment_id||reply.fragment_id!==second.fragment_id||reply.parent_id!==second.id)throw Error('Fragment boundaries were lost');
+ await page.getByLabel('只记下来',{exact:true}).uncheck();
  await page.getByLabel('说说你的想法').fill('测试样例：我想检查当前依据。');await page.getByRole('button',{name:'发送',exact:true}).click();await expect(page.getByText('这一条已保存，尚未完成',{exact:true})).toBeVisible();
  const topic=(await api({action:'topic',title:'测试样例 · 订单兑现',question:'测试：订单是否兑现？'})).id;
  const db=new DatabaseSync(path.join(data,'agent.sqlite')),rec=randomUUID(),run=randomUUID(),at=new Date().toISOString();db.prepare('INSERT INTO records VALUES(?,?,?,?,?,?,?)').run(rec,topic,'user','message','测试样例：我原来关注它是因为行业景气和订单兑现。',at,null);db.prepare('INSERT INTO runs(id,record_id,topic_id,mode,status,revision,created_at) VALUES(?,?,?,?,?,?,?)').run(run,rec,topic,'review','succeeded',0,at);
@@ -28,10 +46,10 @@ try{
  await page.setViewportSize({width:1440,height:1000});await page.getByRole('button',{name:'我的脉络',exact:true}).click();await expect(page.getByRole('heading',{name:'你的判断，有迹可循。'})).toBeVisible();await expect(page.locator('.memory-card').filter({hasText:'原来的依据'})).toBeVisible();await page.screenshot({path:'artifacts/redesign-memory-desktop.png',fullPage:true});
  await page.locator('.memory-card').filter({hasText:'原来的依据'}).click();await expect(page.getByRole('dialog')).toContainText('行业景气和订单兑现');await page.locator('.source-preview').click();await expect(page.getByRole('dialog',{name:'原始依据'})).toContainText('我原来关注它');await page.getByRole('button',{name:'关闭窗口'}).click();await page.getByRole('button',{name:'关闭窗口'}).click();
  await page.getByLabel('搜索记忆').fill('订单兑现');await expect(page.locator('.memory-card').first()).toBeVisible();await page.getByLabel('清空搜索').click();await page.getByRole('button',{name:'变化脉络',exact:true}).click();await expect(page.locator('.timeline')).toContainText('留下原来的依据');await page.getByRole('button',{name:'记忆卡片',exact:true}).click();
- await api({action:'memory',content:'测试样例：我必须一直持有到两个季度后',kind:'principle',topicId:topic});await page.getByRole('button',{name:'原则',exact:true}).click();await expect(page.locator('.memory-card').filter({hasText:'测试样例：我必须一直持有'})).toBeVisible();await page.locator('.memory-card').filter({hasText:'测试样例：我必须一直持有'}).click();await page.getByRole('button',{name:'纠正这条理解'}).click();await page.getByLabel('准确的理解应该是').fill('测试样例：两个季度只是验证节点，不是持有承诺。');await page.getByRole('button',{name:'保存纠正'}).click();await page.getByRole('button',{name:'全部',exact:true}).click();await expect(page.locator('.memory-card').filter({hasText:'两个季度只是验证节点'})).toBeVisible();
+ await api({action:'memory',content:'测试样例：我必须一直持有到两个季度后',kind:'principle',topicId:topic});await page.getByRole('button',{name:'原则',exact:true}).click();await expect(page.locator('.memory-card').filter({hasText:'测试样例：我必须一直持有'})).toBeVisible();await page.locator('.memory-card').filter({hasText:'测试样例：我必须一直持有'}).click();await page.getByRole('button',{name:'纠正这条理解'}).click();await page.getByLabel('准确的理解应该是').fill('测试样例：两个季度只是验证节点，不是持有承诺。');await page.getByRole('button',{name:'保存纠正'}).click();await page.getByRole('button',{name:'全部',exact:true}).click();await expect(page.locator('.memory-card').filter({hasText:'两个季度只是验证节点'}).first()).toBeVisible();
  await api({action:'task',topicId:topic,title:'测试样例 · 检查公告',question:'测试样例：核实订单'});await page.getByRole('button',{name:/^跟进/}).click();await page.getByRole('button',{name:'立即检查'}).click();await expect(page.getByText('这一条已保存，尚未完成',{exact:true})).toBeVisible();
  await page.getByRole('button',{name:'连接与设置'}).click();await expect(page.getByRole('button',{name:'测试连接'})).toBeDisabled();await expect(page.getByRole('dialog')).toContainText('不是模型上下文窗口');await page.screenshot({path:'artifacts/redesign-settings.png',fullPage:true});await page.getByRole('button',{name:'关闭窗口'}).click();
- const exported=await(await fetch(base+'/api/export')).json();if(!exported.records.length||!exported.memory_cards||JSON.stringify(exported).includes('apiKey'))throw Error('Export failed');const security=await fetch(base+'/api/agent',{method:'POST',headers:{Origin:'https://evil.example','Content-Type':'application/json'},body:JSON.stringify({action:'topic',title:'not allowed'})});if(security.ok)throw Error('Cross-site mutation allowed');
+ const exported=await(await fetch(base+'/api/export')).json();if(!exported.records.length||!exported.memory_cards||!exported.record_context?.length||JSON.stringify(exported).includes('apiKey'))throw Error('Export failed');const security=await fetch(base+'/api/agent',{method:'POST',headers:{Origin:'https://evil.example','Content-Type':'application/json'},body:JSON.stringify({action:'topic',title:'not allowed'})});if(security.ok)throw Error('Cross-site mutation allowed');
  await page.getByRole('button',{name:'我的脉络',exact:true}).click();await page.getByRole('button',{name:'原文',exact:true}).click();await page.locator('.memory-card').first().click();await page.getByRole('button',{name:'删除关联原文与记忆'}).click();await page.getByRole('button',{name:'确认删除原文及记忆'}).click();
  await page.setViewportSize({width:390,height:844});if(await page.evaluate(()=>document.documentElement.scrollWidth>innerWidth))throw Error('Memory mobile overflow');await page.screenshot({path:'artifacts/redesign-memory-mobile.png',fullPage:true});if(errors.length)throw Error(errors.join('\n'));console.log('PASS complete redesign: capture, reopen, no-key failure, cards/search/timeline, source, correction, tasks, usage, export, deletion, security and mobile layout');
 }finally{if(browser)await browser.close();server.kill('SIGTERM');await new Promise(r=>setTimeout(r,1000));if(server.exitCode===null)server.kill('SIGKILL');rmSync(data,{recursive:true,force:true})}

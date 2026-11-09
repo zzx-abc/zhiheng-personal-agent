@@ -1,6 +1,6 @@
 import type {WorkingState} from '../server/working-state';
 export type Topic={id:string;title:string;question:string;status:string;updated_at:string};
-export type Rec={id:string;topic_id:string|null;role:string;kind:string;content:string;created_at:string;run_id:string|null};
+export type Rec={id:string;fragment_id:string;parent_id:string|null;topic_id:string|null;role:string;kind:string;content:string;created_at:string;run_id:string|null};
 export type Card={id:string;topic_id:string|null;kind:string;title:string;body:string;origin:string;status:string;source_ids:string;sourceIds?:string[];created_at:string;indexed?:boolean};
 export type Run={id:string;topic_id:string|null;record_id:string;task_id:string|null;status:string;phase:string;created_at:string;started_at:string|null;error:string|null;result:string|null;usage:number};
 export type Answer={judgment:string;reasons:{text:string;sources:string[]}[];uncertainties:string[];next_step:string;changes?:string;disagreement?:string;next_checks?:{question:string;reason:string}[];working_state?:WorkingState|null};

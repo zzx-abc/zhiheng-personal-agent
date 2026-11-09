@@ -22,6 +22,8 @@ CREATE TABLE IF NOT EXISTS events(id TEXT PRIMARY KEY,run_id TEXT REFERENCES run
 CREATE TABLE IF NOT EXISTS usage(id TEXT PRIMARY KEY,run_id TEXT,model TEXT NOT NULL,tokens INTEGER NOT NULL,created_at TEXT NOT NULL);
 CREATE TABLE IF NOT EXISTS working_states(id TEXT PRIMARY KEY,topic_id TEXT NOT NULL REFERENCES topics(id) ON DELETE CASCADE,run_id TEXT NOT NULL REFERENCES runs(id) ON DELETE CASCADE,status TEXT NOT NULL,content TEXT NOT NULL,created_at TEXT NOT NULL,previous_id TEXT);
 CREATE UNIQUE INDEX IF NOT EXISTS one_current_state ON working_states(topic_id) WHERE status='current';
+CREATE TABLE IF NOT EXISTS record_context(record_id TEXT PRIMARY KEY REFERENCES records(id) ON DELETE CASCADE,parent_id TEXT REFERENCES records(id) ON DELETE SET NULL,root_id TEXT REFERENCES records(id) ON DELETE SET NULL);
+CREATE INDEX IF NOT EXISTS record_context_root ON record_context(root_id);
 CREATE INDEX IF NOT EXISTS records_topic ON records(topic_id,created_at);
 CREATE INDEX IF NOT EXISTS runs_status ON runs(status,created_at);`);
 export const id = () => randomUUID();

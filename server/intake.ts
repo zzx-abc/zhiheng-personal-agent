@@ -1,8 +1,10 @@
 import {z} from 'zod';
+import {recalledTopics} from './conversation-context';
 import {all,one,exec,transaction,event,bump,revision,now,type Run,type RecordRow,type Topic} from './db';
 import {createTopic,createTask,pauseTask,invalidateGenerated} from './store';
 import {contract,leaderFormat,leaderSchema,type ModelCall} from './model';
 export const intakeSchema=z.object({
+ context_relation:z.enum(['independent','continue']).default('continue'),memory_query:z.string().min(2).max(300).nullable().default(null),memory_reason:z.string().max(300).default(''),
  route:z.enum(['chat','review','check']),data_need:z.enum(['none','market_data','official_search']).default('none'),review_required:z.boolean().default(false),understanding:z.string().max(300),first_help:z.string().max(1200),
  focus:z.object({id:z.string().nullable(),title:z.string().max(60),question:z.string().max(500),quote:z.string().max(500)}).nullable(),
  followup:z.object({title:z.string().max(100),question:z.string().max(1500),quote:z.string().max(500)}).nullable(),
@@ -12,15 +14,18 @@ export type Intake=z.infer<typeof intakeSchema>;
 export function resolveIntakeRoute(plan:Intake){return {...plan,route:plan.data_need!=='none'?'check' as const:plan.route};}
 export function intakeContext(context:string){
  const c=JSON.parse(context),w=c.workingState;
- return JSON.stringify({...c,workingState:w?{thesis:w.thesis,assessment:w.assessment?.slice(0,500),decision_frame:w.decision_frame,next_action:w.next_action}:null,history:c.history?.slice(0,2).map((h:any)=>({...h,text:h.text?.slice(0,500),truncated:true})),retrievedCards:c.retrievedCards?.slice(0,4).map((card:any)=>({...card,body:card.body?.slice(0,400),excerptOnly:true})),memories:c.memories?.slice(0,6),evidence:[],previousEvidence:[],priorModelJudgments:[],contextSelection:{notice:'此阶段只识别任务与个人背景，未提供外部证据正文；不得据此下市场事实结论。'}});
+ return JSON.stringify({...c,workingState:w?{thesis:w.thesis,assessment:w.assessment?.slice(0,500),decision_frame:w.decision_frame,next_action:w.next_action}:null,history:c.history?.slice(0,2).map((h:any)=>({...h,text:h.text?.slice(0,500),truncated:true})),retrievedCards:c.retrievedCards?.slice(0,4).map((card:any)=>({...card,body:card.body?.slice(0,400),excerptOnly:true})),memories:c.memories?.slice(0,6),evidence:[],previousEvidence:[],priorModelJudgments:[],replyContext:c.replyContext||[],contextSelection:{notice:'此阶段只识别任务与个人背景，未提供外部证据正文；不得据此下市场事实结论。'}});
 }
 export async function understand(call:ModelCall,context:string,images:{mime:string;data:string}[]){
- const topics=all<Topic>("SELECT * FROM topics WHERE status='active' ORDER BY updated_at DESC LIMIT 20");
- return resolveIntakeRoute(intakeSchema.parse(await call(contract+`你先理解用户要完成的任务，不让用户管理Agent。输出JSON：{route:"chat"|"review"|"check",data_need:"none"|"market_data"|"official_search",review_required:涉及实质决策比较时true否则false,understanding:"一句简短的具体理解，不许泛泛说我会帮你分析",first_help:"最多三句先提供有用判断：核心因果链和首要缺口。不是完成承诺，不冒充查证结论；简单问题可空",focus:null或{id:已存在关注ID或null,title:短名称,question:用户正在验证的问题,quote:本次原话的逐字片段},followup:null或{title,question,quote:本次明确委托原话},pause_focus:false,reply:null或完整回答对象}。
+ const topics=JSON.parse(context).candidateTopics||[];
+ return resolveIntakeRoute(intakeSchema.parse(await call(contract+`你先理解用户要完成的任务，不让用户管理Agent。输出JSON：{context_relation:"independent或continue",memory_query:"确实需要历史时的具体检索词，否则null",memory_reason:"历史能解决本次哪个具体缺口，不检索则空",route:"chat"|"review"|"check",data_need:"none"|"market_data"|"official_search",review_required:涉及实质决策比较时true否则false,understanding:"一句简短的具体理解，不许泛泛说我会帮你分析",first_help:"最多三句先提供有用判断：核心因果链和首要缺口。不是完成承诺，不冒充查证结论；简单问题可空",focus:null或{id:已存在关注ID或null,title:短名称,question:用户正在验证的问题,quote:本次原话的逐字片段},followup:null或{title,question,quote:本次明确委托原话},pause_focus:false,reply:null或完整回答对象}。
+先判断本次是不是独立片段，再考虑记忆。没有回复父片段时context_relation=independent；有父片段且是追问、纠正、继续核实时为continue。即使界面仍停在旧讨论，用户开始一个自足的新任务（例如“分析今天早上的盘面并记录”）也用independent，不默认是在看其旧持仓。只是同一公司、同一行业、相近关键词不构成接续。检索不会合并原文或自动接续关注。
+记忆默认不检索：普通记录、市场概览、知识解释和已有材料足够的问题用memory_query=null。用户明确回顾/对比过去/纠正以前的理解，或“又怕跟上次一样”等历史指代对本次有实质帮助时，才填写具体检索词及理由。当前回复链已经足够则不用全库检索。contextBoundary.historyRequested=true表示已完成一次按需检索，不再要求检索；只用本次返回且真正相关的资料，没有找到就坦诚说明或问一个关键问题。检索没有命中不是用户从未说过。
+独立片段的focus一般为null。只有用户明确表达持续关注、验证假设、决策困惑或委托跟进才建立新focus；“做个记录”、泛盘面观察不创建持续关注。只有当前确实在接续/纠正同一待验证问题时才能选候选focus.id，不能仅凭名称相关就挂上旧关注。对历史作比较可以只引用，不必更新那个关注的工作状态。context_relation=independent时不得继承父片段中的持仓、市场对象或判断，reply必须以新问题为准。
 先独立决定data_need，再决定审议深度。当前有明确标的，且回答依赖其走势/成交量/相对强弱时data_need=market_data；判断需要公告原文时official_search。缺的是个人动机或只梳理已提供逻辑时none。只交代未来跟进、回顾或纠正时none。不允许一边说“需要行情核实”，一边选择none把可执行任务留给用户。data_need非none时程序先执行工具，仍可review_required=true。不以其他股票的旧快照代替本次标的。
 工具取数与独立审议分别决定：check仅表示先获取证据；若用户还要求比较原有理由与新选择、检验调整依据，review_required=true，即使只获取报价也要独立审议。纯粹问价、回顾、纠正的review_required=false。
 路由：涉及原有理由与拟调整方向的实质比较、交易评价标准混淆时用review，让两个独立视角核验；但没有明确标的时先帮助拆清问题，只问一个关键问题，不盲目搜索。已有对象且需要核实公开事实时优先check。纠正某个周期或说明担心不是规则时用chat并更新背景，不触发完整重审。复杂投资假设、观点冲突、看材料判断变化用review；明确要求查公告、或回答眼前问题需要报价、行情走势、相对涨跌及最新事实时用check；在工具已覆盖且对象明确时主动取数，不必等用户再次说“调用接口”；普通问题、历史回顾、纠正、状态询问用chat。对现有论证的单一澄清（如单日回落是否改变假设）通常用chat；有新的实质材料、重要分歧或用户明确要求多角度重审时才再用review。用户说“接着推进”“继续查”时，结合workingState.next_action和delegatedTasks决定：已明确要推进且下一步是official_search或market_data可用check；旧状态曾要求行情截图时，应先用新接入的行情工具尝试，不能机械重复索要截图；其他下一步需要用户材料则只说明缺哪一份材料，不重复输出整篇报告或承诺已有数据。用户只问进展时总结真实已完成和卡点，不擅自开新查询。用户要求先评价逻辑时用review，不为了完整研究强制联网；但回答不能把无数据的市场假设说成事实。已有腾讯行情工具：沪深A股和上证指数、沪深300、科创50、深证成指、创业板指的供应商报价及日K（5/20/60个收盘间隔）。需要这些数据就用check；取数后注明供应商时间，不承诺交易所实时性。没有分时、全行业指数目录、资金净流入和订单工具，不能混为一谈。
-持续投资问题可以自然建立focus，不要求填表；现有相关关注优先引用其ID，完全不同的话题不要硬接。个人软件连接、无持续投资判断的闲聊、泛知识问题不建立focus。用户说持有理由、犹豫调整或希望持续验证自己的做法，属于持续决策问题，应自然建立focus并关联原话，即使表达很随意、没有证券代码也可以。明确的虚构练习不得存成真实持仓背景。focus.quote必须来自本次用户原话，转发文章本身不等于用户认可其观点。focus.question写成待验证问题，不写已成立的事实。用户明确纠正正在关注的问题时，使用原有focus.id并给出修正后的question与原话quote，不要重复建立新关注。
+在上述独立片段边界内，持续投资问题可以自然建立focus，不要求填表；只有明确接续同一待验证问题才引用其ID，不因关键词相近合并。个人软件连接、无持续投资判断的闲聊、泛知识问题不建立focus。用户说持有理由、犹豫调整或希望持续验证自己的做法，属于持续决策问题，应自然建立focus并关联原话，即使表达很随意、没有证券代码也可以。明确的虚构练习不得存成真实持仓背景。focus.quote必须来自本次用户原话，转发文章本身不等于用户认可其观点。focus.question写成待验证问题，不写已成立的事实。用户明确纠正正在关注的问题时，使用原有focus.id并给出修正后的question与原话quote，不要重复建立新关注。
 followup只在用户明确交代以后跟进时建立，普通建议不等于委托。只交代以后跟进、还没要求立即查证时route=chat，不调用搜索。当前仅支持用户点击立即检查，不能承诺自动监测或提醒。quote逐字来自本次委托。pause_focus只在用户明确要求暂停当前关注时为true。当前自然语言动作只有建立/接续/纠正关注、保存手动跟进、暂停关注；其他动作不要宣称执行。例如恢复已暂停关注请引导到关注与跟进页面点击恢复；不能承诺自动提醒、盯盘或下单。原则只可提为待认可候选，不能把担心当纪律。
 chat时在reply里直接完成帮助（含记忆纠正）；review/check时reply为null。简单问题只需一两句；长论述先准确抓住因果链再判断。reply格式：`+leaderFormat,intakeContext(context)+'\n可接续的关注（不是已证实的事实）：'+JSON.stringify(topics),intakeSchema,images)));
 }
@@ -32,6 +37,7 @@ export function applyIntake(plan:Intake,run:Run,record:RecordRow){
   if(plan.focus){
    if(plan.focus.id){
     const existing=one<Topic>("SELECT * FROM topics WHERE id=? AND status='active'",plan.focus.id);
+    if(plan.focus.id!==run.topic_id&&!recalledTopics(run.id).has(plan.focus.id))throw Error('本次没有检索或指定这个关注，未自动关联');
     if(!existing)throw Error('找不到要接续的关注，未改变个人背景');
     topicId=existing.id;
     if(/(理解错|更正|纠正|关注的是|研究的是|想验证的是)/.test(record.content)&&plan.focus.question.trim()&&plan.focus.quote.length>=2&&record.content.includes(plan.focus.quote)){
@@ -40,7 +46,7 @@ export function applyIntake(plan:Intake,run:Run,record:RecordRow){
      event(run.id,'focus_corrected',{topicId:existing.id,question:plan.focus.question,sourceId:record.id,quote:plan.focus.quote});
     }
    }else if(plan.focus.title.trim()&&plan.focus.question.trim()&&plan.focus.quote.length>=2&&record.content.includes(plan.focus.quote)){
-    topicId=all<Topic>("SELECT * FROM topics WHERE status='active'").find(t=>t.title===plan.focus!.title)?.id||createTopic(plan.focus.title,plan.focus.question);
+    topicId=createTopic(plan.focus.title,plan.focus.question);
     event(run.id,'focus_created',{topicId,title:plan.focus.title,sourceId:record.id,quote:plan.focus.quote});
    }
   }

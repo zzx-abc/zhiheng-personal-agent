@@ -3,9 +3,20 @@ import { config,publicConfig } from './config';
 import { unlinkSync,existsSync } from 'node:fs';
 import {stateVersions} from './working-state';
 import {cardSnapshot,retrievalStatus,syncCards} from './cards';
-export function snapshot() { return {cards:cardSnapshot(),retrieval:retrievalStatus(),workingStates:stateVersions(),topics:all('SELECT * FROM topics ORDER BY updated_at DESC'),records:all('SELECT * FROM records ORDER BY created_at'),attachments:all('SELECT id,record_id,name,mime,bytes FROM attachments'),memories:all('SELECT * FROM memories ORDER BY updated_at DESC'),tasks:all('SELECT * FROM tasks ORDER BY updated_at DESC'),runs:all('SELECT * FROM runs WHERE id IN (SELECT id FROM runs ORDER BY created_at DESC LIMIT 100) OR id IN (SELECT last_run_id FROM tasks) OR id IN (SELECT run_id FROM working_states) ORDER BY created_at DESC'),reports:all('SELECT * FROM reports'),evidence:all('SELECT * FROM evidence'),events:all("SELECT * FROM events WHERE id IN (SELECT id FROM events ORDER BY rowid DESC LIMIT 300) OR type='research_finished' ORDER BY rowid DESC"),config:publicConfig()}; }
+export function snapshot() { return {cards:cardSnapshot(),retrieval:retrievalStatus(),workingStates:stateVersions(),topics:all('SELECT * FROM topics ORDER BY updated_at DESC'),records:all(`SELECT r.*,c.parent_id,COALESCE(c.root_id,owner.id,r.id) fragment_id FROM records r LEFT JOIN runs x ON r.run_id=x.id LEFT JOIN records owner ON owner.id=x.record_id LEFT JOIN record_context c ON c.record_id=COALESCE(owner.id,r.id) ORDER BY r.created_at`),attachments:all('SELECT id,record_id,name,mime,bytes FROM attachments'),memories:all('SELECT * FROM memories ORDER BY updated_at DESC'),tasks:all('SELECT * FROM tasks ORDER BY updated_at DESC'),runs:all('SELECT * FROM runs WHERE id IN (SELECT id FROM runs ORDER BY created_at DESC LIMIT 100) OR id IN (SELECT last_run_id FROM tasks) OR id IN (SELECT run_id FROM working_states) ORDER BY created_at DESC'),reports:all('SELECT * FROM reports'),evidence:all('SELECT * FROM evidence'),events:all("SELECT * FROM events WHERE id IN (SELECT id FROM events ORDER BY rowid DESC LIMIT 300) OR type='research_finished' ORDER BY rowid DESC"),config:publicConfig()}; }
 export function createTopic(title:string,question='') { const key=id(),at=now();exec('INSERT INTO topics VALUES(?,?,?,?,?,?)',key,title,question,'active',at,at);return key; }
 export function addRecord(content:string,topicId:string|null,kind='message',role='user',runId:string|null=null) {if(topicId&&!one('SELECT id FROM topics WHERE id=?',topicId))throw Error('关注事项不存在');const key=id();exec('INSERT INTO records VALUES(?,?,?,?,?,?,?)',key,topicId,role,kind,content,now(),runId);return key;}
+/** New captures are independent. Only an explicit reply carries a parent. */
+export function capture(content:string,parentId:string|null,kind='message') {
+ return transaction(()=>{
+  const parent=parentId?one<RecordRow>("SELECT * FROM records WHERE id=? AND role='user'",parentId):undefined;
+  if(parentId&&!parent)throw Error('要继续的原文已不存在，请作为新想法发送');
+  const key=addRecord(content,parent?.topic_id||null,kind);
+  const root=parent?one<{root_id:string|null}>('SELECT root_id FROM record_context WHERE record_id=?',parent.id)?.root_id||parent.id:key;
+  exec('INSERT INTO record_context VALUES(?,?,?)',key,parent?.id||null,root);
+  return key;
+ });
+}
 export function enqueue(recordId:string,mode:string,taskId:string|null=null) {
  return transaction(()=>{
  const record=one<RecordRow>('SELECT * FROM records WHERE id=?',recordId); if(!record)throw Error('记录不存在');

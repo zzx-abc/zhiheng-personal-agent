@@ -90,7 +90,7 @@ test('Rejoining a focus refreshes memory before answering and withdrawing an old
  reset();saveConfig('TEST-FIXTURE-NOT-A-REAL-KEY','kimi-k3',1000000);const topic=store.createTopic('测试旧议题','测试问题');const memory=store.addMemory('TEST_TOPIC_RULE','principle',topic);const rec=store.addRecord('上次那个判断，你理解错了，那不是我的交易规则',null);const run=store.enqueue(rec,'auto');let refreshed=false;
  const reply={judgment:'测试已纠正',reasons:[],uncertainties:[],next_step:'',agreement:'',disagreement:'',memory_candidates:[],withdraw_memory_ids:[memory]};
  await processRun(claim()!,async(system,prompt)=>{
-  if(system.includes('你先理解用户要完成的任务'))return {route:'chat',understanding:'测试接续',first_help:'',focus:{id:topic,title:'测试旧议题',question:'测试问题',quote:''},followup:null,pause_focus:false,reply:{...reply,withdraw_memory_ids:[]}};
+  if(system.includes('你先理解用户要完成的任务'))return {memory_query:'TEST_TOPIC_RULE',memory_reason:'测试：找到需要纠正的旧理解',route:'chat',understanding:'测试接续',first_help:'',focus:{id:topic,title:'测试旧议题',question:'测试问题',quote:''},followup:null,pause_focus:false,reply:{...reply,withdraw_memory_ids:[]}};
   refreshed=true;assert.ok(prompt.includes('TEST_TOPIC_RULE'));return reply;
  });assert.ok(refreshed);assert.equal(sql.one<{status:string}>('SELECT status FROM memories WHERE id=?',memory)?.status,'withdrawn');assert.equal(sql.one<{status:string}>('SELECT status FROM runs WHERE id=?',run)?.status,'succeeded');
 });
