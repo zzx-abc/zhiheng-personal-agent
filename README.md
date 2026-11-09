@@ -123,7 +123,7 @@ npm start
 
 ## 历史检索与上下文预算
 
-已经实现 SQLite FTS5/BM25 全文检索 + 本地 multilingual-e5-small 语义向量 + RRF 排名融合，按事项和纠正状态加权，最多选择六张相关卡片并关联原文。中文使用分词和双字片段。384维向量存入本地SQLite，个人规模直接计算余弦相似度，不另建向量数据库。模型来源：[官方模型卡](https://huggingface.co/Xenova/multilingual-e5-small)。
+已经实现 SQLite FTS5/BM25 全文检索 + 本地 multilingual-e5-small 语义向量 + RRF 排名融合，加入来源标签候选通道，按独立来源去重并结合明确反馈调整排序，最多选择六张候选卡片，再验证其中哪些原文可用于回答。中文使用分词和双字片段。384维向量存入本地SQLite，个人规模直接计算余弦相似度，不另建向量数据库。模型来源：[官方模型卡](https://huggingface.co/Xenova/multilingual-e5-small)。
 
 首次运行 `npm run memory:setup` 从官方站点下载公开权重，需要能访问 Hugging Face。之后索引与检索只用本地 CPU，不发送给远程 embedding 服务，不需要新增 Key。若需已有代理，可为下载命令配置 `HTTPS_PROXY` 和 `NODE_USE_ENV_PROXY=1`，不写死代理地址。语义模型不可用时明确降级为全文检索。测试实际加载模型并检索改写表达，没有使用假向量。
 
