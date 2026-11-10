@@ -110,7 +110,11 @@ try{
  await page.getByRole('button',{name:'接着梳理这一步 →',exact:true}).click();
  await expect(page.getByLabel('说说你的想法')).toContainText('不是我已认可的规则');
  await expect(page.getByRole('dialog',{name:'每周回顾'})).toHaveCount(0);
+ await page.getByLabel('说说你的想法').fill('测试样例：不能丢的未发送草稿');
  await page.getByRole('button',{name:'每周回顾',exact:true}).click();
+ await page.getByRole('button',{name:'接着梳理这一步 →',exact:true}).click();
+ await expect(page.locator('.toast')).toContainText('已有未发送的草稿');await expect(page.getByRole('dialog',{name:'每周回顾'})).toBeVisible();
+ await expect(page.getByLabel('说说你的想法')).toHaveValue('测试样例：不能丢的未发送草稿');
  await page.getByRole('button',{name:'纠正这份回顾',exact:true}).click();await page.getByLabel('这份回顾哪里理解错了？').fill('测试样例：只是当时的担心，不能变成原则。');await page.getByRole('button',{name:'保存回顾纠正',exact:true}).click();await expect(page.locator('.weekly-correction')).toContainText('不能变成原则');
  await page.getByRole('button',{name:'重新生成这期',exact:true}).click();await expect(page.locator('.weekly-card')).toContainText('等待连接模型');await expect(page.locator('.weekly-history')).toBeVisible();
  await page.setViewportSize({width:390,height:844});if(await page.evaluate(()=>document.documentElement.scrollWidth>innerWidth))throw Error('Weekly mobile overflow');await page.screenshot({path:'artifacts/weekly-review-mobile.png',fullPage:true});
