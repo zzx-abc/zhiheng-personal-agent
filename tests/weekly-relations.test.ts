@@ -63,7 +63,7 @@ test('Planning, writing and full-report audit run in order; source deletion clea
  db.exec('DELETE FROM records WHERE id=?',ids.correction);run=db.one<any>('SELECT * FROM runs WHERE id=?',r.runId)!;assert.equal(run.result,null);assert.equal(run.status,'stale');
 });
 test('A boundary failure gets one bounded repair and then a full audit; repeated crossing still fails',async()=>{
- for(const mode of ['logic-repaired','changes-repaired','unsupported-repaired','still-invalid']){
+ for(const mode of ['logic-repaired','changes-repaired','unsupported-repaired','unsupported-action','unsupported-verification','still-invalid']){
   const repaired=mode!=='still-invalid';
   const ids=fixture(),r=weekly.requestWeeklyReview(at);let writes=0,audits=0;
   const original=await weekly.weeklyContext(db.one<any>('SELECT * FROM weekly_reviews WHERE id=?',r.reviewId));const {catalog}=weekly.weeklyEvidence(original);const eid=(id:string)=>excerpt(catalog,id);
@@ -73,8 +73,8 @@ test('A boundary failure gets one bounded repair and then a full audit; repeated
    if(system.includes('独立的交易思路核对者')){audits++;return {rejected:[]};}
    writes++;const group=c.reviewPlan.groups.find((g:any)=>g.source_ids.includes(ids.first));
    assert.ok(!c.sources.some((s:any)=>s.id===ids.independent),'Independent source must not be visible to the writer');
-   const source=(writes===2&&repaired)||mode==='changes-repaired'||mode==='unsupported-repaired'?ids.first:ids.independent;
-   return {focus:[],changes:mode==='changes-repaired'&&writes===1?[{text:'Test unsupported change',evidence_ids:[ids.first,ids.independent].map(eid)}]:[],unresolved:[],logic:[{situation_id:group.alias,title:'测试：保持独立',basis:null,change:null,assessment:{text:mode==='unsupported-repaired'&&writes===1?'测试：每次都只能靠临时情绪决策':'测试：仅原文支持的推断',evidence_ids:[eid(source)]},next_check:null}]};
+   const source=(writes===2&&repaired)||mode==='changes-repaired'||mode.startsWith('unsupported-')?ids.first:ids.independent;
+   return {focus:[],changes:mode==='changes-repaired'&&writes===1?[{text:'Test unsupported change',evidence_ids:[ids.first,ids.independent].map(eid)}]:[],unresolved:[],logic:[{situation_id:group.alias,title:'测试：保持独立',basis:null,change:null,assessment:{text:writes===1&&mode.startsWith('unsupported-')?({ 'unsupported-repaired':'测试：每次都只能靠临时情绪决策','unsupported-action':'测试：尚未形成任何行动或新的判断','unsupported-verification':'测试：用户质疑数据，说明判断所依赖的行情数据本身尚未核实'}[mode]||'测试'):'测试：仅原文支持的推断',evidence_ids:[eid(source)]},next_check:null}]};
   });
   const run=db.one<any>('SELECT * FROM runs WHERE id=?',r.runId)!;
   assert.equal(writes,2);assert.equal(audits,repaired?1:0);assert.equal(run.status,repaired?'succeeded':'failed');

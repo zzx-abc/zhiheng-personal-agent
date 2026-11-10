@@ -140,7 +140,8 @@ export function validateWeekly(result:unknown,sources:Source[],plan?:ReviewPlan)
  for(const field of prose){
   // A cited moment of hesitation cannot establish an exclusive or repeated emotional mechanism.
   if(/每次.{0,35}(?:情绪决策|情绪驱动)|只能.{0,12}(?:情绪|感觉).{0,8}决策/.test(field.text))throw new WeeklyUnsupportedClaimError('不能把局部犹豫归纳为每次或只能靠情绪决策，请只描述有记录的触发与尚缺证据');
-  if(/截至.{0,16}(?:期末|结束).{0,10}未发生.{0,8}(?:交易|换仓|买入|卖出)/.test(field.text))throw new WeeklyUnsupportedClaimError('没有完整成交记录，不能断言截至期末未发生交易；应区分用户明确报告的行动与记录中尚未确认的行动');
+  if(/(?:说明|意味着).{0,30}行情数据.{0,15}(?:尚未|没有|未被)(?:核实|核查|验证)/.test(field.text))throw new WeeklyUnsupportedClaimError('用户质疑数据不证明行情从未核查；本期材料只能说明未确认核查状态');
+  if(/尚未形成.{0,8}(?:行动|新的判断)|截至.{0,16}(?:期末|结束).{0,10}未发生.{0,8}(?:交易|换仓|买入|卖出)/.test(field.text))throw new WeeklyUnsupportedClaimError('没有完整成交记录，不能断言截至期末未发生交易；应区分用户明确报告的行动与记录中尚未确认的行动');
  }
 
  for(const [section,items] of Object.entries({focus:parsed.focus,changes:parsed.changes,unresolved:parsed.unresolved}))for(const item of items){
