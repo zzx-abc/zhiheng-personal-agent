@@ -40,7 +40,7 @@ export function leaderInput(context:string,analysis:Item,challenge:Item){
  const evidence=c.evidence||[];
  const required=new Set([...(c.workingState?.thesis?.sources||[]),...Object.values(c.workingState?.decision_frame||{}).filter(Boolean).map(x=>(x as Item).source_id)]);
  const availableHistory=c.history||[];
- const history=availableHistory.filter((x:Item,i:number)=>required.has(x.id)||i<2).map((x:Item)=>({...x,text:excerpt(x.text,300).text,truncated:true}));
+ const history=availableHistory.filter((x:Item,i:number)=>required.has(x.id)||i<2).map((x:Item)=>({...x,...excerpt(x.text,750,Object.values(c.workingState?.decision_frame||{}).filter(Boolean).filter(q=>(q as Item).source_id===x.id).map(q=>(q as Item).quote))}));
  const memories=(c.memories||[]).slice(0,3).map((x:Item)=>({kind:x.kind,content:excerpt(x.content,250).text,source_id:x.source_id}));
  const state=c.workingState?{thesis:c.workingState.thesis,decision_frame:c.workingState.decision_frame}:null;
  const previousEvidence=evidence.length?[]:(c.previousEvidence||[]).slice(0,1);

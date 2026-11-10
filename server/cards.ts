@@ -32,9 +32,9 @@ export function syncCards(){
   for(const row of all<StateVersion>('SELECT * FROM working_states')){
    const state=JSON.parse(row.content) as WorkingState;const status=row.status==='current'?'active':'historical';const sources=stateSourceIds(state);const base={topic_id:row.topic_id,status,source_ids:JSON.stringify(sources),created_at:row.created_at,parent_id:row.topic_id};
    put({...base,id:'state:'+row.id,kind:'judgment',title:state.thesis.text.slice(0,40),body:state.assessment,origin:'model'});
-   for(const [key,label] of [['original_basis','原来的依据'],['evaluation_horizon','验证的时间线'],['contemplated_change','考虑中的调整'],['change_trigger','触发变化的情况']] as const){const q=state.decision_frame?.[key];if(q)put({...base,id:`frame:${row.id}:${key}`,kind:key,title:label,body:q.quote,origin:'original',source_ids:JSON.stringify([q.source_id])});}
+   for(const [key,label] of [['original_basis','原来的依据'],['evaluation_horizon','验证的时间线'],['contemplated_change','考虑中的调整'],['change_trigger','触发变化的情况'],['validation_condition','明确的验证条件'],['invalidation_condition','明确的失效条件'],['reported_action','本人报告的行动']] as const){const q=state.decision_frame?.[key];if(q)put({...base,id:`frame:${row.id}:${key}`,kind:key,title:label,body:q.quote,origin:'original',source_ids:JSON.stringify([q.source_id])});}
    for(const [i,question] of state.open_questions.entries())put({...base,id:`question:${row.id}:${i}`,kind:'question',title:'还没有解决',body:question,origin:'model'});
-   if(row.previous_id)put({...base,id:'change:'+row.id,kind:'change',title:'判断有了变化',body:state.change_summary,origin:'model'});
+   if(row.previous_id)put({...base,id:'change:'+row.id,kind:'change',title:state.logic_change?.kind==='result_only'?'结果有了更新':state.logic_change?.kind==='correction'?'理解已修正':'思路的更新',body:state.logic_change?.summary||state.change_summary,origin:'model'});
   }
   for(const card of all<{id:string}>('SELECT id FROM memory_cards'))if(!live.has(card.id)){exec('DELETE FROM memory_cards WHERE id=?',card.id);exec('DELETE FROM memory_cards_fts WHERE card_id=?',card.id);}
  });

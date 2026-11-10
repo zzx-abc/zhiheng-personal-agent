@@ -10,7 +10,7 @@ import { searchHistory,invalidateGenerated } from './store';
 import { contract,reviewFormat,leaderFormat,reviewSchema,leaderSchema,assertCitations,type ModelCall,type Review,type Leader } from './model';
 import {agentCall} from './runtime';
 import {config} from './config';
-import {currentState,saveState,validateState,stateSourceIds,workingStateSchema,workingStateFormat,type WorkingState} from './working-state';
+import {currentState,saveState,validateState,stateSourceIds,workingStateSchema,workingStateFormat,decisionLogicFormat,type WorkingState} from './working-state';
 import {research} from './research';
 import {marketContext} from './market-research';
 import {chinaDate} from './market-data';
@@ -124,7 +124,7 @@ export async function processRun(run:Run,testCall?:ModelCall){const controller=n
  const willCorrect=!one("SELECT id FROM events WHERE run_id=? AND type='relationship_feedback_applied'",run.id)&&explicitCorrection&&(leader.withdraw_memory_ids.length>0||/(理解错|更正|纠正|不是我的|我只是[\s\S]{0,100}不是)/.test(record.content));
  if(willCorrect&&((run.topic_id===originalTopic&&hadWorkingState)||currentState(run.topic_id))&&!leader.working_state){
   phase(run,'updating_state');
-  leader.working_state=workingStateSchema.parse(await call(contract+workingStateFormat+'本次用户明确纠正了理解。必须对照原文修正现有状态；不受影响的部分保留，不把整件事丢掉。本次只输出状态对象本身，不要working_state外层或其他回复字段。',context+'\n本轮已形成的回答：'+JSON.stringify(leader),workingStateSchema,images));
+  leader.working_state=workingStateSchema.parse(await call(contract+workingStateFormat+decisionLogicFormat+'本次用户明确纠正了理解。必须对照原文修正现有状态；不受影响的部分保留，不把整件事丢掉。本次只输出状态对象本身，不要working_state外层或其他回复字段。',context+'\n本轮已形成的回答：'+JSON.stringify(leader),workingStateSchema,images));
   // The stored Leader report must agree with the committed state.
   alive(run);exec("UPDATE reports SET content=? WHERE run_id=? AND agent='leader'",JSON.stringify(leader),run.id);
  }
@@ -134,6 +134,7 @@ export async function processRun(run:Run,testCall?:ModelCall){const controller=n
   const unsupported=leader.working_state.evidence.filter(x=>!x.sources.length);
   if(unsupported.length){alive(run);event(run.id,'unsupported_state_evidence_omitted',{claims:unsupported.map(x=>x.text)});leader.working_state.evidence=leader.working_state.evidence.filter(x=>x.sources.length);exec("UPDATE reports SET content=? WHERE run_id=? AND agent='leader'",JSON.stringify(leader),run.id);}
   validateState(leader.working_state,allowed);
+  if(leader.working_state.logic_change&&leader.working_state.logic_change.after.source_id!==record.id)throw Error('本轮逻辑更新必须引用本次原话');
  }
  // The researcher is not an authority: independent review can reject a claimed
  // resolution. Keep the visible execution outcome consistent with that verdict.
