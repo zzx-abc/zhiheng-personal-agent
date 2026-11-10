@@ -102,10 +102,15 @@ try{
  await page.getByRole('button',{name:'现在回顾最近 7 天',exact:true}).click();await expect(page.locator('.weekly-card')).toContainText('等待连接模型');
  const weekly=(await(await fetch(base+'/api/agent')).json()).weekly,w=weekly.reviews[0],wv=weekly.versions[0];
  const qa=new DatabaseSync(path.join(data,'agent.sqlite'));
- qa.prepare("UPDATE runs SET status='succeeded',error=NULL,result=? WHERE id=?").run(JSON.stringify({focus:[{text:'测试样例：本周记录过对订单质量的担心。',citations:[{source_id:first.id,quote:'我担心订单质量'}]}],changes:[],unresolved:[],logic:[{situation_id:first.id,title:'测试样例：订单是否兑现',basis:null,change:null,assessment:{text:'测试样例：这是担心，未形成交易规则。',citations:[{source_id:first.id,quote:'我担心订单质量'}]},next_check:null}],coverage:{total:2,selected:2,excerpted:false,imagesNotRead:0}}),wv.run_id);qa.close();
+ qa.prepare("UPDATE runs SET status='partial',error='测试样例：跨问题比较未通过核对，已隐藏',result=? WHERE id=?").run(JSON.stringify({focus:[{text:'测试样例：本周记录过对订单质量的担心。',citations:[{source_id:first.id,quote:'我担心订单质量'}]}],changes:[],unresolved:[],logic:[{situation_id:first.id,title:'测试样例：订单是否兑现',basis:null,change:null,assessment:{text:'测试样例：这是担心，未形成交易规则。',citations:[{source_id:first.id,quote:'我担心订单质量'}]},next_check:{text:'测试样例：先区分订单数量和回款质量的验证依据。',citations:[{source_id:first.id,quote:'我担心订单质量'}]},resume_source_id:first.id}],coverage:{total:2,selected:2,excerpted:false,imagesNotRead:0}}),wv.run_id);qa.close();
  await expect(page.locator('.weekly-card')).toContainText('本周记录过对订单质量');
+ await expect(page.locator('.weekly-card')).toContainText('部分完成');await expect(page.locator('.weekly-card')).toContainText('跨问题比较未通过核对');
  await page.setViewportSize({width:390,height:844});await expect(page.locator('.toast')).toHaveCount(0,{timeout:8000});await page.screenshot({path:'artifacts/weekly-review-result-mobile.png'});
  await expect(page.locator('.weekly-logic')).toContainText('未形成交易规则');await page.locator('.weekly-item summary').first().click();await page.locator('.weekly-item .source-preview').first().click();await expect(page.getByRole('dialog',{name:'原始依据'})).toContainText('我担心订单质量');await page.getByRole('button',{name:'关闭窗口'}).click();
+ await page.getByRole('button',{name:'接着梳理这一步 →',exact:true}).click();
+ await expect(page.getByLabel('说说你的想法')).toContainText('不是我已认可的规则');
+ await expect(page.getByRole('dialog',{name:'每周回顾'})).toHaveCount(0);
+ await page.getByRole('button',{name:'每周回顾',exact:true}).click();
  await page.getByRole('button',{name:'纠正这份回顾',exact:true}).click();await page.getByLabel('这份回顾哪里理解错了？').fill('测试样例：只是当时的担心，不能变成原则。');await page.getByRole('button',{name:'保存回顾纠正',exact:true}).click();await expect(page.locator('.weekly-correction')).toContainText('不能变成原则');
  await page.getByRole('button',{name:'重新生成这期',exact:true}).click();await expect(page.locator('.weekly-card')).toContainText('等待连接模型');await expect(page.locator('.weekly-history')).toBeVisible();
  await page.setViewportSize({width:390,height:844});if(await page.evaluate(()=>document.documentElement.scrollWidth>innerWidth))throw Error('Weekly mobile overflow');await page.screenshot({path:'artifacts/weekly-review-mobile.png',fullPage:true});

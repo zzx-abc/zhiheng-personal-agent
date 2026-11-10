@@ -44,3 +44,27 @@ export function decisionExcerpts(text:string,limit:number){
  if(text.length<=limit)return [text];
  const half=Math.floor(limit/2);return [text.slice(0,half),text.slice(-(limit-half))];
 }
+
+/** Shared content budget: short captures do not waste an equal per-record quota.
+ * Keep whole arguments whenever possible. Only overflow inputs use bounded,
+ * paragraph-based excerpts including the middle; originals are never rewritten.
+ */
+export function allocateDecisionText(rows:RecordRow[],budget=16000){
+ const full=rows.reduce((n,r)=>n+r.content.length,0);
+ if(full<=budget)return new Map(rows.map(r=>[r.id,[r.content]]));
+ const allocations=new Map<string,number>();let remaining=budget;
+ // Protect short clarifications first; redistribute unused space to long theses.
+ for(const r of [...rows].sort((a,b)=>a.content.length-b.content.length)){
+  const left=rows.length-allocations.size,limit=Math.min(r.content.length,Math.floor(remaining/left));
+  allocations.set(r.id,limit);remaining-=limit;
+ }
+ return new Map(rows.map(r=>{
+  const limit=allocations.get(r.id)!;if(limit<=0)return [r.id,[]];if(r.content.length<=limit)return [r.id,[r.content]];
+  const paragraphs=r.content.match(/[^\n]+\n*|\n+/g)||[r.content];
+  const ranked=paragraphs.map((text,index)=>({text,index,score:(index===0||index===paragraphs.length-1?8:0)+( /因为|所以|因此|但是|并不|不意味|假设|轮动|切换|验证|不是|纠正|依据/.test(text)?4:0)})).sort((a,b)=>b.score-a.score||a.index-b.index);
+  const chosen:{text:string;index:number}[]=[];let available=limit;
+  for(const p of ranked){if(p.text.length<=available){chosen.push(p);available-=p.text.length;}}
+  if(!chosen.length){const size=Math.floor(limit/3);return [r.id,[r.content.slice(0,size),r.content.slice(Math.floor(r.content.length/2),Math.floor(r.content.length/2)+size),r.content.slice(-(limit-2*size))]];}
+  return [r.id,chosen.sort((a,b)=>a.index-b.index).map(p=>p.text)];
+ }));
+}
