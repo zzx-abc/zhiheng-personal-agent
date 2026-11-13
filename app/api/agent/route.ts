@@ -1,4 +1,5 @@
 import {setWeeklyEnabled,requestWeeklyReview,retryWeeklyReview,correctWeeklyReview,deleteWeeklyReview} from '../../../server/weekly-review';
+import {saveNotifications,disconnectNotifications,requestNotificationTest,retryNotification} from '../../../server/notifications';
 import {correctTag,applyLinkFeedback} from '../../../server/memory-learning';
 import { NextRequest,NextResponse } from 'next/server';
 import { z } from 'zod';
@@ -14,6 +15,10 @@ export const dynamic='force-dynamic';
 function failure(e:unknown){return NextResponse.json({error:e instanceof Error?e.message:'请求失败'},{status:400});}
 export async function GET(req:NextRequest){try{guard(req);const query=req.nextUrl.searchParams.get('q');return NextResponse.json(query?{results:searchHistory(query,req.nextUrl.searchParams.get('topic'))}:snapshot(),{headers:{'Cache-Control':'no-store'}});}catch(e){return failure(e);}}
 const actions=z.discriminatedUnion('action',[
+ z.object({action:z.literal('notification_settings'),webhook:z.string().trim().max(250).optional(),secret:z.string().trim().max(200).optional(),enabled:z.boolean()}),
+ z.object({action:z.literal('notification_test')}),
+ z.object({action:z.literal('notification_disconnect')}),
+ z.object({action:z.literal('notification_retry'),id:z.string().uuid()}),
  z.object({action:z.literal('continue_state'),id:z.string().uuid()}),
  z.object({action:z.literal('correct_state'),id:z.string().uuid(),content:z.string().trim().min(1).max(1000)}),
  z.object({action:z.literal('weekly_settings'),enabled:z.boolean()}),
@@ -53,6 +58,10 @@ export async function POST(req:NextRequest){try{guard(req);
  }
  const a=actions.parse(await req.json());let result:unknown={ok:true};
  switch(a.action){
+ case 'notification_settings':saveNotifications(a);break;
+ case 'notification_test':result={id:requestNotificationTest()};break;
+ case 'notification_disconnect':disconnectNotifications();break;
+ case 'notification_retry':retryNotification(a.id);break;
  case 'weekly_settings':setWeeklyEnabled(a.enabled);break;
  case 'weekly_generate':result=requestWeeklyReview();break;
  case 'weekly_retry':result=retryWeeklyReview(a.id);break;

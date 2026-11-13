@@ -16,6 +16,21 @@ async function verifyOfflineRecovery(page){
  await expect(page.getByLabel('说说你的想法')).toHaveValue('测试样例：断线时保留这段草稿');
  await page.getByLabel('说说你的想法').fill('');
 }
+async function verifyNotifications(page){
+ await page.getByRole('button',{name:'连接与设置',exact:true}).click();
+ const panel=page.locator('.notification-settings');await expect(panel).toContainText('飞书通知');
+ await panel.getByLabel('飞书 Webhook',{exact:true}).fill('https://open.feishu.cn/open-apis/bot/v2/hook/00000000-0000-4000-8000-000000000000');
+ await panel.getByRole('button',{name:'保存飞书连接',exact:true}).click();await expect(panel).toContainText('已连接 · 自动通知尚未开启');
+ await panel.getByRole('button',{name:'发送测试通知',exact:true}).click();await expect(panel).toContainText('等待后台发送');
+ // No worker runs in this isolated UI test: no message is sent externally.
+ await page.reload();await page.getByRole('button',{name:'连接与设置',exact:true}).click();await expect(panel).toContainText('等待后台发送');
+ const state=await(await fetch(base+'/api/agent')).text();if(state.includes('00000000-0000-4000-8000-000000000000'))throw Error('Webhook exposed in snapshot');
+ await panel.getByRole('button',{name:'开启自动通知',exact:true}).click();await expect(panel).toContainText('已开启 · 完成后主动告诉你');await expect(panel).toContainText('已取消');
+ await panel.getByRole('button',{name:'关闭自动通知',exact:true}).click();await expect(panel).toContainText('自动通知尚未开启');
+ const exportData=await(await fetch(base+'/api/export')).text();if(!exportData.includes('notification_outbox')||exportData.includes('00000000-0000-4000-8000-000000000000'))throw Error('Notification export unsafe or incomplete');
+ await page.setViewportSize({width:390,height:844});if(await page.evaluate(()=>document.documentElement.scrollWidth>innerWidth))throw Error('Notification mobile overflow');await page.screenshot({path:'artifacts/notification-settings-mobile.png',fullPage:true});
+ await panel.getByRole('button',{name:'移除飞书连接',exact:true}).click();await panel.getByRole('button',{name:'确认移除连接',exact:true}).click();await expect(panel.getByRole('button',{name:'发送测试通知',exact:true})).toHaveCount(0);await page.getByRole('button',{name:'关闭窗口',exact:true}).click();
+}
 async function verifyContinuity(page){
  const topic=(await api({action:'topic',title:'测试样例 · 换仓前核对依据',question:'测试样例：订单假设是否有新证据？'})).id;
  const db=new DatabaseSync(path.join(data,'agent.sqlite')),record=randomUUID(),run=randomUUID(),version=randomUUID(),at=new Date().toISOString();
@@ -158,5 +173,5 @@ try{
  if(!(await(await fetch(base+'/api/agent')).json()).records.some(r=>r.id===first.id))throw Error('Deleting review deleted investment original');
  const exported=await(await fetch(base+'/api/export')).json();if(!exported.records.length||!exported.memory_cards||!exported.record_context?.length||!exported.record_tags?.length||!exported.link_feedback?.length||JSON.stringify(exported).includes('apiKey'))throw Error('Export failed');const security=await fetch(base+'/api/agent',{method:'POST',headers:{Origin:'https://evil.example','Content-Type':'application/json'},body:JSON.stringify({action:'topic',title:'not allowed'})});if(security.ok)throw Error('Cross-site mutation allowed');
  await page.getByRole('button',{name:'我的脉络',exact:true}).click();await page.getByRole('button',{name:'原文',exact:true}).click();await page.locator('.memory-card').first().click();await page.getByRole('button',{name:'删除关联原文与记忆'}).click();await page.getByRole('button',{name:'确认删除原文及记忆'}).click();
- await page.setViewportSize({width:390,height:844});if(await page.evaluate(()=>document.documentElement.scrollWidth>innerWidth))throw Error('Memory mobile overflow');await page.screenshot({path:'artifacts/redesign-memory-mobile.png',fullPage:true});await verifyContinuity(page);if(errors.length)throw Error(errors.join('\n'));console.log('PASS weekly schedule, report sources/correction/versions/export/delete; complete redesign: capture, reopen, no-key failure, cards/search/timeline, source, correction, tasks, usage, export, deletion, security and mobile layout');
+ await page.setViewportSize({width:390,height:844});if(await page.evaluate(()=>document.documentElement.scrollWidth>innerWidth))throw Error('Memory mobile overflow');await page.screenshot({path:'artifacts/redesign-memory-mobile.png',fullPage:true});await verifyContinuity(page);await verifyNotifications(page);if(errors.length)throw Error(errors.join('\n'));console.log('PASS weekly schedule, report sources/correction/versions/export/delete; complete redesign: capture, reopen, no-key failure, cards/search/timeline, source, correction, tasks, usage, export, deletion, security and mobile layout');
 }finally{if(browser)await browser.close();server.kill('SIGTERM');await new Promise(r=>setTimeout(r,1000));if(server.exitCode===null)server.kill('SIGKILL');rmSync(data,{recursive:true,force:true})}
