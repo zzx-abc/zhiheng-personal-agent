@@ -1,3 +1,5 @@
+import {feishuResult,sendFeishu} from './feishu/receiver';
+import {feishuTransport} from './feishu/runtime';
 import {existsSync,readFileSync,writeFileSync,renameSync,chmodSync} from 'node:fs';
 import {createHmac} from 'node:crypto';
 import path from 'node:path';
@@ -63,6 +65,7 @@ function current(run:Run){
  return true;
 }
 export function collectNotifications(){
+ for(const r of all<Run>("SELECT * FROM runs WHERE mode IN ('library','feishu_ingest') AND status IN ('succeeded','partial','failed') AND NOT EXISTS(SELECT 1 FROM notification_outbox n WHERE n.run_id=runs.id)")){const result=feishuResult(r);if(result){const at=now();exec('INSERT OR IGNORE INTO notification_outbox VALUES(?,?,?,?,?,?,?,NULL)',id(),r.id,'library_feishu','queued',result.generation,at,at);}}
  const s=settings();if(!s.enabled||!s.enabled_at)return;
  transaction(()=>{
   const runs=all<Run>(`SELECT * FROM runs WHERE status IN ('succeeded','partial','failed','blocked') AND (task_id IS NOT NULL OR mode IN ('weekly','check') OR EXISTS (SELECT 1 FROM events e WHERE e.run_id=runs.id AND e.type='continuation_requested')) AND COALESCE(finished_at,created_at)>=? AND NOT EXISTS (SELECT 1 FROM notification_outbox n WHERE n.run_id=runs.id) ORDER BY COALESCE(finished_at,created_at)`,s.enabled_at);
@@ -108,6 +111,7 @@ export async function deliverNotification(send:typeof fetch=fetch){
  const finish=(status:string,error:string|null=null)=>exec('UPDATE notification_outbox SET status=?,error=?,updated_at=? WHERE id=?',status,error,now(),item.id);
  try{
   if(process.env.AGENT_TEST_MODE==='1'&&send===fetch){finish('cancelled','隔离测试禁止向外部通知渠道发送');return;}
+  if(item.kind==='library_feishu'){const run=one<Run>('SELECT * FROM runs WHERE id=?',item.run_id);if(!run){finish('cancelled','来源已删除');return;}const result=await sendFeishu(run,item.id,feishuTransport);finish(result.status,result.error);return;}
   const s=settings(),c=credentials();
   if(!c.webhook||c.generation!==s.generation||s.generation!==item.generation||(!s.enabled&&item.kind!=='test')){finish('cancelled','通知已关闭、连接已变更或配置待重新保存');return;}
   const body=notificationText(item);if(!body){finish('cancelled','来源已删除、纠正、暂停或被新版本替代');return;}
@@ -126,6 +130,7 @@ export async function deliverNotification(send:typeof fetch=fetch){
 export function retryNotification(key:string){
  const receipt=one<Receipt>('SELECT * FROM notification_outbox WHERE id=?',key);
  if(!receipt||!['failed','unknown'].includes(receipt.status))throw Error('这条通知当前不可重试');
+ if(receipt.kind==='library_feishu')throw Error('资料回复请在原对话重新查询；未知发送结果不盲目重发');
  if(!credentials().webhook||(!settings().enabled&&receipt.kind!=='test'))throw Error('请先连接并开启通知');
  if(!notificationText(receipt))throw Error('来源已失效，不能重发旧结果');
  exec("UPDATE notification_outbox SET status='queued',generation=?,error=NULL,updated_at=? WHERE id=?",settings().generation,now(),key);

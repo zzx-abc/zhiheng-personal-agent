@@ -1,0 +1,12 @@
+import {z} from 'zod';
+export const OWNER='local';
+export const TEMPLATE='source-extraction/1.0';
+export const MAX_BYTES=15*1024*1024;
+export const stanceSchema=z.enum(['unexpressed','interested','pending','partial_agree','agree','question','oppose']);
+export type Entry={id:string;owner:string;title:string;kind:string;retention:string;status:string;version:number;asset_id:string|null;original_url:string|null;final_url:string|null;fetched_at:string|null;metadata:string;purpose:string;created_at:string;updated_at:string;parse_state:string;extract_state:string;link_state:string;index_state:string;error:string|null};
+export type Chunk={id:string;asset_id:string;ordinal:number;locator:string;body:string};
+export type Asset={id:string;hash:string;mime:string;bytes:number;path:string;parse_state:string;parse_info:string};
+export const citationSchema=z.object({chunkId:z.string(),quote:z.string().min(2).max(1000)});
+export const extractionSchema=z.object({items:z.array(z.object({kind:z.enum(['claim','evidence','premise','risk','question','topic']),text:z.string().min(2).max(500),object:z.string().max(120).nullable(),period:z.string().max(120).nullable(),basis:z.string().max(150).nullable(),origin:z.enum(['source','system']),citations:z.array(citationSchema).min(1).max(3)})).max(12)});
+export type Extraction=z.infer<typeof extractionSchema>;
+export type Input={text?:string;url?:string;files?:{name:string;mime:string;bytes:Buffer}[];instruction?:string;intent?:'collect'|'note'|'analyze'|'pending';channel?:'web'|'feishu';eventKey:string;sender?:string;conversation?:string;messageId?:string;replyId?:string;collectionMode?:boolean};

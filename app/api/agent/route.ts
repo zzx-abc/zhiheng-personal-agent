@@ -1,3 +1,4 @@
+import {libraryConversation} from '../../../server/library/conversation';
 import {setWeeklyEnabled,requestWeeklyReview,retryWeeklyReview,correctWeeklyReview,deleteWeeklyReview} from '../../../server/weekly-review';
 import {handleObservationConversation} from '../../../server/observation/conversation';
 import {saveNotifications,disconnectNotifications,requestNotificationTest,retryNotification} from '../../../server/notifications';
@@ -51,6 +52,7 @@ export async function POST(req:NextRequest){try{guard(req);
  const f=await req.formData();const text=z.string().max(20000).parse(f.get('text')||'');const replyTo=z.string().uuid().nullable().parse(f.get('replyTo')||null);const mode=z.enum(['note','auto','chat','review','check']).parse(f.get('mode'));
  const files=f.getAll('files').filter((x):x is File=>typeof x!=='string');if(files.length>3||files.some(x=>x.size>5*1024*1024)||files.reduce((n,f)=>n+f.size,0)>15*1024*1024)throw Error('每次最多三张图片，每张不超过 5MB');
  if(!text.trim()&&!files.length)throw Error('先写一句话或选择图片');
+ if(mode==='auto'&&!files.length){const library=await libraryConversation(text.trim(),replyTo);if(library)return NextResponse.json(library);}
  const prepared=[];for(const file of files){const buffer=Buffer.from(await file.arrayBuffer());const png=buffer.subarray(0,8).equals(Buffer.from([137,80,78,71,13,10,26,10]));const jpeg=buffer[0]===255&&buffer[1]===216&&buffer[2]===255;const webp=buffer.toString('ascii',0,4)==='RIFF'&&buffer.toString('ascii',8,12)==='WEBP';if(!png&&!jpeg&&!webp)throw Error('仅支持 PNG、JPEG、WebP 图片，不支持 SVG 或其他文件');prepared.push({file,buffer,mime:png?'image/png':jpeg?'image/jpeg':'image/webp'});}
  const recordId=capture(text.trim()||'请解释这张图片，并指出关键依据与未知信息。',replyTo,mode==='note'?'note':'message');
  mkdirSync(path.join(dataDir,'attachments'),{recursive:true,mode:0o700});
