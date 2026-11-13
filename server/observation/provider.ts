@@ -3,10 +3,11 @@ import {createHash} from 'node:crypto';
 import {all,one,exec,now} from '../db';
 import {parseQuote,parseHistory,supportedSymbol} from '../market-data';
 import './db';
+import {resolveThemes} from './themes';
 import {selectedGroups,type ObservationConfig,type Frame,type Group,type DataPoint} from './types';
 import {calendarVersion,localParts} from './calendar';
 const hash=(s:string)=>createHash('sha256').update(s).digest('hex');
-const inFlight=new Map<string,Promise<{bytes:Buffer;receivedAt:string}>>();
+const inFlight=new Map<string,Promise<{bytes:Buffer;receivedAt:string;cacheHit:boolean}>>();
 let nextRequestAt=0;
 async function throttle(signal:AbortSignal){
  const slot=Math.max(Date.now(),nextRequestAt);nextRequestAt=slot+500;
@@ -17,14 +18,14 @@ function diagnostic(error:unknown){const message=error instanceof Error?error.me
 export async function mapLimited<T,R>(items:T[],limit:number,fn:(item:T)=>Promise<R>){const output:R[]=new Array(items.length);let next=0;await Promise.all(Array.from({length:Math.min(limit,items.length)},async()=>{while(next<items.length){const i=next++;output[i]=await fn(items[i]);}}));return output;}
 async function get(url:string,ttl:number,signal:AbortSignal,transport:typeof fetch,clock:()=>Date){
  const existing=transport===fetch?one<{body:string;received_at:string;expires_at:string}>('SELECT * FROM observation_cache WHERE url=?',url):undefined;
- if(existing&&existing.expires_at>clock().toISOString())return {bytes:Buffer.from(existing.body,'base64'),receivedAt:existing.received_at};
+ if(existing&&existing.expires_at>clock().toISOString())return {bytes:Buffer.from(existing.body,'base64'),receivedAt:existing.received_at,cacheHit:true};
  const active=transport===fetch?inFlight.get(url):undefined;if(active)return active;
  const request=(async()=>{
   if(transport===fetch)await throttle(signal);
   const r=await transport(url,{signal:AbortSignal.any([signal,AbortSignal.timeout(12000)]),redirect:'error'});if(!r.ok)throw Error('数据源 HTTP '+r.status);
   const reader=r.body?.getReader();if(!reader)throw Error('数据源返回为空');const parts:Uint8Array[]=[];let size=0;
   try{while(true){const x=await reader.read();if(x.done)break;size+=x.value.length;if(size>3000000){await reader.cancel();throw Error('数据超过读取上限');}parts.push(x.value);}}finally{reader.releaseLock();}
-  const bytes=Buffer.concat(parts),receivedAt=clock().toISOString();if(transport===fetch)exec('INSERT OR REPLACE INTO observation_cache VALUES(?,?,?,?)',url,bytes.toString('base64'),receivedAt,new Date(+clock()+ttl).toISOString());return {bytes,receivedAt};
+  const bytes=Buffer.concat(parts),receivedAt=clock().toISOString();if(transport===fetch)exec('INSERT OR REPLACE INTO observation_cache VALUES(?,?,?,?)',url,bytes.toString('base64'),receivedAt,new Date(+clock()+ttl).toISOString());return {bytes,receivedAt,cacheHit:false};
  })();if(transport===fetch)inFlight.set(url,request);try{return await request;}finally{if(transport===fetch)inFlight.delete(url);}
 }
 export function parseConstituents(bytes:Buffer,indexId:string,receivedAt:string,sampleSize:number):Group{
@@ -41,25 +42,25 @@ export function parseConstituents(bytes:Buffer,indexId:string,receivedAt:string,
  return {id:indexId,name:String(records[0][name]),kind:'industry',source:`https://oss-ch.csindex.com.cn/static/html/csindex/public/uploads/file/autofile/cons/${indexId}cons.xls`,sourceDate,knownAt:receivedAt,mappingVersion:hash(JSON.stringify({members})),fullMembers:members.map(m=>m.symbol),members:sample};
 }
 export async function collectFrame(config:ObservationConfig,signal:AbortSignal,transport:typeof fetch=fetch,clock=()=>new Date()):Promise<Frame>{
- const issues:string[]=[],specs=selectedGroups(config);
- const groups=(await mapLimited(specs,2,async spec=>{try{const url=`https://oss-ch.csindex.com.cn/static/html/csindex/public/uploads/file/autofile/cons/${spec.id}cons.xls`;const r=await get(url,24*3600000,signal,transport,clock);return parseConstituents(r.bytes,spec.id,r.receivedAt,config.scope.sampleSize);}catch(e){issues.push(spec.name+'：成分来源 '+diagnostic(e));return null;}})).filter((x):x is Group=>!!x);
+ const issues:string[]=[],themeConfigs=config.observationMode==='theme_watch'?resolveThemes(config.themes):undefined,specs=themeConfigs?themeConfigs.map(t=>({id:t.id,name:t.name,kind:'theme' as const})):selectedGroups(config);
+ const groups:Group[]=themeConfigs?themeConfigs.map(t=>({id:t.id,name:t.name,kind:'theme',source:t.members[0].sources[0].url,sourceDate:t.effectiveAt.slice(0,10),knownAt:t.effectiveAt,mappingVersion:hash(JSON.stringify(t)),fullMembers:t.members.filter(m=>m.role!=='pending'&&m.verified).map(m=>m.symbol),members:t.members.map(m=>({symbol:m.symbol,name:m.name}))})):(await mapLimited(selectedGroups(config),2,async spec=>{try{const url=`https://oss-ch.csindex.com.cn/static/html/csindex/public/uploads/file/autofile/cons/${spec.id}cons.xls`;const r=await get(url,24*3600000,signal,transport,clock);return parseConstituents(r.bytes,spec.id,r.receivedAt,config.scope.sampleSize);}catch(e){issues.push(spec.name+'：成分来源 '+diagnostic(e));return null;}})).filter((x):x is Group=>!!x);
  for(const g of specs)if(!groups.some(x=>x.id===g.id))issues.push(g.name+'：官方成分名单未取得或不满足日期/字段要求');
- const members=[...new Map([...groups.flatMap(g=>g.members),{symbol:config.scope.benchmark,name:'沪深300'}].map(x=>[x.symbol,x])).values()];
+ const members=[...new Map([...groups.flatMap(g=>g.members),...(themeConfigs||[]).flatMap(t=>t.benchmarks.filter(b=>b.symbol).map(b=>({symbol:b.symbol!,name:b.name}))),{symbol:config.scope.benchmark,name:'沪深300'}].map(x=>[x.symbol,x])).values()];
  const points:Record<string,DataPoint>={};
  await mapLimited(Array.from({length:Math.ceil(members.length/30)},(_,i)=>members.slice(i*30,i*30+30)),2,async batch=>{
-  const url='https://qt.gtimg.cn/q='+batch.map(x=>x.symbol).sort().join(',');let payload:{bytes:Buffer;receivedAt:string}|null=null;
+  const url='https://qt.gtimg.cn/q='+batch.map(x=>x.symbol).sort().join(',');let payload:{bytes:Buffer;receivedAt:string;cacheHit:boolean}|null=null;
   try{payload=await get(url,30000,signal,transport,clock);}catch(e){issues.push('一批腾讯报价未取得：'+diagnostic(e));}
   await mapLimited(batch,3,async member=>{
    const historyUrl=`https://web.ifzq.gtimg.cn/appstock/app/fqkline/get?param=${member.symbol},day,,,65,qfq`;
    const p:DataPoint={...member,kind:member.symbol===config.scope.benchmark?'index':'stock',source:'腾讯财经网页行情；无稳定性/再分发承诺',quoteUrl:url,historyUrl,receivedAt:payload?.receivedAt||clock().toISOString(),historyReceivedAt:null,quotePriceBasis:'unadjusted',quoteAt:null,tradeDate:null,priceBasis:member.symbol===config.scope.benchmark?'none':'qfq',priceUnit:member.symbol===config.scope.benchmark?'index_points':'CNY',volumeUnit:'腾讯日K原始单位（未取得正式单位约定）',volumeComparable:false,finalPrice:false,finalVolume:false,quote:null,bars:[],issues:[]};
-   if(payload)try{const q=parseQuote(new TextDecoder('gb18030').decode(payload.bytes),member.symbol,payload.receivedAt);p.name=q.name;p.quoteAt=q.asOf;p.tradeDate=q.asOf.slice(0,10);p.quote={price:q.price,previousClose:q.previousClose,volume:q.volumeRaw,open:q.open};}catch{p.issues.push('报价字段、日期或编码未通过校验');}
-   try{const h=await get(historyUrl,6*3600000,signal,transport,clock);const parsed=parseHistory(h.bytes.toString('utf8'),member.symbol,historyUrl,h.receivedAt);p.historyReceivedAt=h.receivedAt;p.priceBasis=parsed.adjustment;p.bars=parsed.bars.map(b=>({date:b.date,close:b.close,volume:b.volumeRaw}));}catch(e){p.issues.push('历史日K不可用：'+diagnostic(e));}
+   if(payload)try{const q=parseQuote(new TextDecoder('gb18030').decode(payload.bytes),member.symbol,payload.receivedAt);if(themeConfigs&&!member.symbol.startsWith('sz159')&&q.name.replace(/\s/g,'')!==member.name.replace(/\s/g,''))throw Error('名称与证券代码不匹配');p.quoteCacheHit=payload.cacheHit;p.name=q.name;p.quoteAt=q.asOf;p.tradeDate=q.asOf.slice(0,10);p.quote={price:q.price,previousClose:q.previousClose,volume:q.volumeRaw,open:q.open};}catch{p.issues.push('报价字段、日期或编码未通过校验');}
+   try{const h=await get(historyUrl,themeConfigs?300000:6*3600000,signal,transport,clock);const parsed=parseHistory(h.bytes.toString('utf8'),member.symbol,historyUrl,h.receivedAt);p.historyCacheHit=h.cacheHit;p.historyReceivedAt=h.receivedAt;p.priceBasis=parsed.adjustment;p.bars=parsed.bars.map(b=>({date:b.date,close:b.close,volume:b.volumeRaw,high:b.high,low:b.low}));}catch(e){p.issues.push('历史日K不可用：'+diagnostic(e));}
    points[member.symbol]=p;
   });
  });
  if(signal.aborted)throw Error('扫描已取消或超时');
  const observedAt=clock().toISOString(),classificationVersion=hash(JSON.stringify(groups.map(g=>[g.id,g.mappingVersion,g.members.map(m=>m.symbol)])));
- return {id:hash(JSON.stringify({observedAt,groups,points})),provider:'Tencent webpage + CSI official constituents',observedAt,calendarVersion,groups,points,issues,classificationVersion,synthetic:false,coverage:{requestedGroups:specs.length,loadedGroups:groups.length,requestedSymbols:members.length,loadedSymbols:Object.values(points).filter(p=>p.quote&&p.bars.length).length,uncovered:['仅中证800的10个行业分类中的确定性成分抽样，不是全A股扫描','不覆盖北交所、概念主题、ETF份额、行业全成分权重及产业链环节关系','样本等权收益不是行业指数收益；每组按代码排序等距取样，存在抽样偏差','腾讯接口无正式最终收盘标志及已核实成交量单位，正式收盘/量能确认停用','只有当前成分快照，不支持回填本系统采集之前的无偏历史回测','未接入新闻/公告常规扫描，不推断上涨原因或资金身份']}};
+ return {id:hash(JSON.stringify({observedAt,groups,points})),provider:themeConfigs?'Tencent webpage + versioned verified theme mappings':'Tencent webpage + CSI official constituents',observedAt,calendarVersion,groups,points,issues,classificationVersion,synthetic:false,...(themeConfigs?{themeConfigs}:{}),coverage:{requestedGroups:specs.length,loadedGroups:groups.length,requestedSymbols:members.length,loadedSymbols:Object.values(points).filter(p=>p.quote&&p.bars.length).length,uncovered:themeConfigs?['仅配置中的精选观察股票，不代表全市场或全行业','腾讯网页行情无稳定性和再分发承诺，缺失按证券分别显示','无正式最终收盘标志；当前报价不能升级为正式收盘确认','未取得可比分钟成交量，盘中量能无法验证','未自动扫描产业公告，业务映射是带日期的公开证据；不推断消息因果']:['仅中证800的10个行业分类中的确定性成分抽样，不是全A股扫描','不覆盖北交所、概念主题、ETF份额、行业全成分权重及产业链环节关系','样本等权收益不是行业指数收益；每组按代码排序等距取样，存在抽样偏差','腾讯接口无正式最终收盘标志及已核实成交量单位，正式收盘/量能确认停用','只有当前成分快照，不支持回填本系统采集之前的无偏历史回测','未接入新闻/公告常规扫描，不推断上涨原因或资金身份']}};
 }
 export function storedFrame(frameId:string){const r=one<{payload:string}>('SELECT payload FROM observation_frames WHERE id=?',frameId);return r?JSON.parse(r.payload) as Frame:null;}
 export function recentFrames(){return all<{id:string;observed_at:string}>('SELECT id,observed_at FROM observation_frames ORDER BY observed_at DESC LIMIT 50');}

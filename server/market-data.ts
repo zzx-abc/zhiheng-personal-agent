@@ -1,6 +1,6 @@
 import {z} from 'zod';
 export const indexNames:Record<string,string>={sh000001:'上证指数',sh000300:'沪深300',sh000688:'科创50',sz399001:'深证成指',sz399006:'创业板指'};
-export const supportedSymbol=(s:string)=>/^(sh(?:60|68)\d{4}|sz(?:00|30)\d{4})$/.test(s)||Object.hasOwn(indexNames,s);
+export const supportedSymbol=(s:string)=>/^(sh(?:60|68)\d{4}|sz(?:00|30)\d{4})$/.test(s)||Object.hasOwn(indexNames,s)||['sz159516','sz159995'].includes(s);
 export const marketRequestSchema=z.object({instruments:z.array(z.object({symbol:z.string().refine(supportedSymbol,'仅支持沪深A股和已接入的常用指数'),name:z.string().min(1).max(30),role:z.enum(['subject','benchmark']).default('subject')})).min(1).max(3),observation:z.enum(['quote','daily']).default('daily'),sessions:z.union([z.literal(5),z.literal(20),z.literal(60)]).default(20)}).refine(x=>new Set(x.instruments.map(i=>i.symbol)).size===x.instruments.length,'证券不能重复').refine(x=>x.instruments.filter(i=>i.role==='benchmark').length<=1,'最多一个比较基准');
 export type MarketRequest=z.infer<typeof marketRequestSchema>;
 export type Quote={symbol:string;name:string;kind:'stock'|'index';price:number;previousClose:number|null;open:number|null;high:number|null;low:number|null;changePercent:number|null;asOf:string;providerTime:string;currency:'CNY'|'index_points';volumeRaw:number|null;volumeUnit:string;fetchedAt:string;cacheHit:boolean;note:string};

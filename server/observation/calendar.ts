@@ -8,3 +8,10 @@ export function marketPhase(at:string|Date){const {date,minute}=localParts(at),d
 export function previousSessions(date:string,count:number){const out:string[]=[];let d=Date.parse(date+'T00:00:00Z');for(let i=0;i<160&&out.length<count;i++){d-=86400000;const x=new Date(d).toISOString().slice(0,10),open=tradingDay(x);if(open===null)break;if(open)out.unshift(x);}return out;}
 export function nextObservation(at:string,minutes:number){const base=+new Date(at);for(let i=minutes;i<9*24*60;i+=1){const d=new Date(base+i*60000),p=localParts(d);if(tradingDay(p.date)===null)return null;if(tradingDay(p.date)&&((p.minute>=580&&p.minute<=680)||(p.minute>=790&&p.minute<=890)))return d.toISOString();}return null;}
 export function missedTradingMinutes(from:string,to:string){let total=0;const end=+new Date(to),start=Math.max(+new Date(from),end-8*86400000);for(let at=start;at<end;at+=60000)if(marketPhase(new Date(at))==='intraday')total++;return total;}
+
+/** Fixed exchange-session slots. No catch-up bursts after sleep or lunch. */
+export function nextThemeObservation(at:string,minutes:number){
+ const start=new Date(at);for(let i=0;i<10;i++){const day=localParts(new Date(+start+i*86400000)).date;if(tradingDay(day)===null)return null;if(!tradingDay(day))continue;
+  for(const opening of [570,780])for(let m=opening;m<opening+120;m+=minutes){const slot=new Date(day+'T00:00:00+08:00');slot.setTime(+slot+m*60000);if(+slot>+start)return slot.toISOString();}
+ }return null;
+}

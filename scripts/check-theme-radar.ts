@@ -1,0 +1,8 @@
+// Explicit isolated live capture. No credentials, personal records, model calls or messages.
+import {mkdtempSync,rmSync,writeFileSync,mkdirSync} from 'node:fs';
+import {tmpdir} from 'node:os';
+import path from 'node:path';
+if(!process.argv.includes('--live'))throw Error('请显式指定 --live；只读取公开行情，不推送');
+const dir=mkdtempSync(path.join(tmpdir(),'zhiheng-theme-live-'));process.env.AGENT_DATA_DIR=dir;process.env.AGENT_TEST_MODE='1';
+const {observationConfigSchema}=await import('../server/observation/types'),{defaultThemeRefs}=await import('../server/observation/themes'),{collectFrame}=await import('../server/observation/provider'),{analyzeThemes}=await import('../server/observation/theme-engine'),{db}=await import('../server/db');
+try{const c=observationConfigSchema.parse({observationMode:'theme_watch',themes:defaultThemeRefs(),frequencyMinutes:30}),f=await collectFrame(c,AbortSignal.timeout(180000)),report=analyzeThemes(f,c,[],true);mkdirSync('artifacts',{recursive:true});writeFileSync('artifacts/theme-radar-live.json',JSON.stringify({frame:f,report},null,2),{mode:0o600});writeFileSync('artifacts/theme-radar-preview.txt',report.text,{mode:0o600});console.log(JSON.stringify({at:f.observedAt,core:report.themes.flatMap(t=>t.stocks.filter(s=>s.role==='core')).length,coverage:f.coverage,themes:report.themes.map(t=>({name:t.name,status:t.status,valid:t.valid,total:t.configured,relative3:t.relative3,relative5:t.relative5,prices:t.stocks.filter(s=>s.role==='core').map(s=>({name:s.name,price:s.price,asOf:s.quoteAt,relative3:s.relative3,relative5:s.relative5}))})),requestsStored:Object.keys(f.points).length,modelCalls:0,externalMessages:0}));}finally{db.close();rmSync(dir,{recursive:true,force:true});}

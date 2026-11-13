@@ -1,0 +1,654 @@
+[
+  {
+    "id": "semiconductor-local",
+    "version": 1,
+    "effectiveAt": "2026-11-13T00:00:00+08:00",
+    "name": "半导体国产替代",
+    "scope": "仅材料、设备、精密零部件、EDA的精选观察组合；不代表全部国产化或全部芯片。",
+    "purpose": "靶材领先是否延续，CMP是否相对增强？",
+    "segments": [
+      "靶材",
+      "CMP",
+      "精密零部件",
+      "EDA",
+      "设备"
+    ],
+    "members": [
+      {
+        "symbol": "sz300666",
+        "name": "江丰电子",
+        "aliases": [],
+        "role": "core",
+        "segments": [
+          "靶材",
+          "精密零部件"
+        ],
+        "reason": "披露超高纯溅射靶材和半导体精密零部件业务；跨环节但全局只计一家公司",
+        "sources": [
+          {
+            "url": "https://static.cninfo.com.cn/finalpage/2026-04-16/1225108992.PDF",
+            "title": "江丰电子公开业务资料",
+            "claim": "披露超高纯溅射靶材和半导体精密零部件业务；跨环节但全局只计一家公司",
+            "type": "disclosure",
+            "checkedAt": "2026-11-13",
+            "publishedAt": null
+          }
+        ],
+        "verified": true,
+        "listing": {
+          "status": "listed",
+          "date": null,
+          "source": "https://static.cninfo.com.cn/finalpage/2026-04-16/1225108992.PDF"
+        },
+        "business": {
+          "disclosed": "披露超高纯溅射靶材和半导体精密零部件业务；跨环节但全局只计一家公司",
+          "products": "披露超高纯溅射靶材和半导体精密零部件业务；跨环节但全局只计一家公司",
+          "commercial": "本配置只核实业务关联，未独立核验本期订单与兑现情况",
+          "contribution": "本配置未提取该方向的独立收入/利润占比",
+          "inference": "作为该环节的精选观察对象，不代表投资价值或供应链因果关系已验证",
+          "unknowns": [
+            "最新订单、收入贡献与价格变化原因需另行核实"
+          ]
+        }
+      },
+      {
+        "symbol": "sh600206",
+        "name": "有研新材",
+        "aliases": [],
+        "role": "core",
+        "segments": [
+          "靶材"
+        ],
+        "reason": "披露集成电路用高纯溅射靶材扩建项目；建设计划不等于业绩兑现",
+        "sources": [
+          {
+            "url": "https://static.cninfo.com.cn/finalpage/2026-07-31/1225448208.PDF",
+            "title": "有研新材公开业务资料",
+            "claim": "披露集成电路用高纯溅射靶材扩建项目；建设计划不等于业绩兑现",
+            "type": "disclosure",
+            "checkedAt": "2026-11-13",
+            "publishedAt": null
+          }
+        ],
+        "verified": true,
+        "listing": {
+          "status": "listed",
+          "date": null,
+          "source": "https://static.cninfo.com.cn/finalpage/2026-07-31/1225448208.PDF"
+        },
+        "business": {
+          "disclosed": "披露集成电路用高纯溅射靶材扩建项目；建设计划不等于业绩兑现",
+          "products": "披露集成电路用高纯溅射靶材扩建项目；建设计划不等于业绩兑现",
+          "commercial": "本配置只核实业务关联，未独立核验本期订单与兑现情况",
+          "contribution": "本配置未提取该方向的独立收入/利润占比",
+          "inference": "作为该环节的精选观察对象，不代表投资价值或供应链因果关系已验证",
+          "unknowns": [
+            "最新订单、收入贡献与价格变化原因需另行核实"
+          ]
+        }
+      },
+      {
+        "symbol": "sh688019",
+        "name": "安集科技",
+        "aliases": [],
+        "role": "core",
+        "segments": [
+          "CMP"
+        ],
+        "reason": "化学机械抛光液与功能性湿电子化学品",
+        "sources": [
+          {
+            "url": "https://www.anjimicro.com/zoujinanji.html",
+            "title": "安集科技公开业务资料",
+            "claim": "化学机械抛光液与功能性湿电子化学品",
+            "type": "company",
+            "checkedAt": "2026-11-13",
+            "publishedAt": null
+          }
+        ],
+        "verified": true,
+        "listing": {
+          "status": "listed",
+          "date": null,
+          "source": "https://www.anjimicro.com/zoujinanji.html"
+        },
+        "business": {
+          "disclosed": "化学机械抛光液与功能性湿电子化学品",
+          "products": "化学机械抛光液与功能性湿电子化学品",
+          "commercial": "本配置只核实业务关联，未独立核验本期订单与兑现情况",
+          "contribution": "本配置未提取该方向的独立收入/利润占比",
+          "inference": "作为该环节的精选观察对象，不代表投资价值或供应链因果关系已验证",
+          "unknowns": [
+            "最新订单、收入贡献与价格变化原因需另行核实"
+          ]
+        }
+      },
+      {
+        "symbol": "sz300054",
+        "name": "鼎龙股份",
+        "aliases": [],
+        "role": "core",
+        "segments": [
+          "CMP"
+        ],
+        "reason": "CMP抛光垫、抛光液及清洗液材料",
+        "sources": [
+          {
+            "url": "https://www.dl-kg.com/integrated_circuit_2.html",
+            "title": "鼎龙股份公开业务资料",
+            "claim": "CMP抛光垫、抛光液及清洗液材料",
+            "type": "company",
+            "checkedAt": "2026-11-13",
+            "publishedAt": null
+          }
+        ],
+        "verified": true,
+        "listing": {
+          "status": "listed",
+          "date": null,
+          "source": "https://www.dl-kg.com/integrated_circuit_2.html"
+        },
+        "business": {
+          "disclosed": "CMP抛光垫、抛光液及清洗液材料",
+          "products": "CMP抛光垫、抛光液及清洗液材料",
+          "commercial": "本配置只核实业务关联，未独立核验本期订单与兑现情况",
+          "contribution": "本配置未提取该方向的独立收入/利润占比",
+          "inference": "作为该环节的精选观察对象，不代表投资价值或供应链因果关系已验证",
+          "unknowns": [
+            "最新订单、收入贡献与价格变化原因需另行核实"
+          ]
+        }
+      },
+      {
+        "symbol": "sh688409",
+        "name": "富创精密",
+        "aliases": [],
+        "role": "core",
+        "segments": [
+          "精密零部件"
+        ],
+        "reason": "半导体设备工艺/结构零部件与模组产品",
+        "sources": [
+          {
+            "url": "https://www.fortune-semi.com/",
+            "title": "富创精密公开业务资料",
+            "claim": "半导体设备工艺/结构零部件与模组产品",
+            "type": "company",
+            "checkedAt": "2026-11-13",
+            "publishedAt": null
+          }
+        ],
+        "verified": true,
+        "listing": {
+          "status": "listed",
+          "date": null,
+          "source": "https://www.fortune-semi.com/"
+        },
+        "business": {
+          "disclosed": "半导体设备工艺/结构零部件与模组产品",
+          "products": "半导体设备工艺/结构零部件与模组产品",
+          "commercial": "本配置只核实业务关联，未独立核验本期订单与兑现情况",
+          "contribution": "本配置未提取该方向的独立收入/利润占比",
+          "inference": "作为该环节的精选观察对象，不代表投资价值或供应链因果关系已验证",
+          "unknowns": [
+            "最新订单、收入贡献与价格变化原因需另行核实"
+          ]
+        }
+      },
+      {
+        "symbol": "sz301269",
+        "name": "华大九天",
+        "aliases": [],
+        "role": "core",
+        "segments": [
+          "EDA"
+        ],
+        "reason": "EDA工具开发与服务，全流程布局仍应结合披露核验",
+        "sources": [
+          {
+            "url": "https://static.cninfo.com.cn/finalpage/2026-05-20/1225321207.PDF",
+            "title": "华大九天公开业务资料",
+            "claim": "EDA工具开发与服务，全流程布局仍应结合披露核验",
+            "type": "disclosure",
+            "checkedAt": "2026-11-13",
+            "publishedAt": null
+          }
+        ],
+        "verified": true,
+        "listing": {
+          "status": "listed",
+          "date": null,
+          "source": "https://static.cninfo.com.cn/finalpage/2026-05-20/1225321207.PDF"
+        },
+        "business": {
+          "disclosed": "EDA工具开发与服务，全流程布局仍应结合披露核验",
+          "products": "EDA工具开发与服务，全流程布局仍应结合披露核验",
+          "commercial": "本配置只核实业务关联，未独立核验本期订单与兑现情况",
+          "contribution": "本配置未提取该方向的独立收入/利润占比",
+          "inference": "作为该环节的精选观察对象，不代表投资价值或供应链因果关系已验证",
+          "unknowns": [
+            "最新订单、收入贡献与价格变化原因需另行核实"
+          ]
+        }
+      },
+      {
+        "symbol": "sh688206",
+        "name": "概伦电子",
+        "aliases": [],
+        "role": "auxiliary",
+        "segments": [
+          "EDA"
+        ],
+        "reason": "EDA建模、器件特征提取与仿真工具，作为同环节辅助样本",
+        "sources": [
+          {
+            "url": "https://www.primarius-tech.com/en/aboutus/news.html",
+            "title": "概伦电子公开业务资料",
+            "claim": "EDA建模、器件特征提取与仿真工具，作为同环节辅助样本",
+            "type": "company",
+            "checkedAt": "2026-11-13",
+            "publishedAt": null
+          }
+        ],
+        "verified": true,
+        "listing": {
+          "status": "listed",
+          "date": null,
+          "source": "https://www.primarius-tech.com/en/aboutus/news.html"
+        },
+        "business": {
+          "disclosed": "EDA建模、器件特征提取与仿真工具，作为同环节辅助样本",
+          "products": "EDA建模、器件特征提取与仿真工具，作为同环节辅助样本",
+          "commercial": "本配置只核实业务关联，未独立核验本期订单与兑现情况",
+          "contribution": "本配置未提取该方向的独立收入/利润占比",
+          "inference": "作为该环节的精选观察对象，不代表投资价值或供应链因果关系已验证",
+          "unknowns": [
+            "最新订单、收入贡献与价格变化原因需另行核实"
+          ]
+        }
+      },
+      {
+        "symbol": "sz002371",
+        "name": "北方华创",
+        "aliases": [],
+        "role": "auxiliary",
+        "segments": [
+          "设备"
+        ],
+        "reason": "半导体工艺装备，作为设备环节辅助观察；不能代表全部设备板块",
+        "sources": [
+          {
+            "url": "https://www.naura.com/",
+            "title": "北方华创公开业务资料",
+            "claim": "半导体工艺装备，作为设备环节辅助观察；不能代表全部设备板块",
+            "type": "company",
+            "checkedAt": "2026-11-13",
+            "publishedAt": null
+          }
+        ],
+        "verified": true,
+        "listing": {
+          "status": "listed",
+          "date": null,
+          "source": "https://www.naura.com/"
+        },
+        "business": {
+          "disclosed": "半导体工艺装备，作为设备环节辅助观察；不能代表全部设备板块",
+          "products": "半导体工艺装备，作为设备环节辅助观察；不能代表全部设备板块",
+          "commercial": "本配置只核实业务关联，未独立核验本期订单与兑现情况",
+          "contribution": "本配置未提取该方向的独立收入/利润占比",
+          "inference": "作为该环节的精选观察对象，不代表投资价值或供应链因果关系已验证",
+          "unknowns": [
+            "最新订单、收入贡献与价格变化原因需另行核实"
+          ]
+        }
+      }
+    ],
+    "benchmarks": [
+      {
+        "id": "CSI300",
+        "symbol": "sh000300",
+        "name": "沪深300",
+        "scope": "共同市场宽基；指数点位，非全A股",
+        "role": "market",
+        "source": {
+          "url": "https://www.csindex.com.cn/#/indices/family/detail?indexCode=000300",
+          "title": "沪深300指数",
+          "claim": "共同市场基准",
+          "type": "exchange",
+          "checkedAt": "2026-11-13",
+          "publishedAt": null
+        }
+      },
+      {
+        "id": "931743",
+        "symbol": null,
+        "name": "中证半导体材料设备主题指数",
+        "scope": "材料和设备；不单独代表EDA，行情代码映射尚未接入",
+        "role": "reference",
+        "source": {
+          "url": "https://oss-ch.csindex.com.cn/static/html/csindex/public/uploads/indices/detail/files/zh_CN/20231208180655-931743_Index_Methodology_cn.pdf",
+          "title": "931743编制方案",
+          "claim": "材料、设备上市公司证券样本",
+          "type": "exchange",
+          "checkedAt": "2026-11-13",
+          "publishedAt": "2023-12-08"
+        }
+      },
+      {
+        "id": "159516",
+        "symbol": "sz159516",
+        "name": "国泰中证半导体材料设备主题ETF",
+        "scope": "材料设备的ETF价格代理，有跟踪误差/溢价，不等于EDA指数",
+        "role": "theme",
+        "source": {
+          "url": "https://static.cninfo.com.cn/finalpage/2023-08-14/1217519370.PDF",
+          "title": "基金简称公告",
+          "claim": "159516跟踪半导体材料设备主题",
+          "type": "fund",
+          "checkedAt": "2026-11-13",
+          "publishedAt": "2023-08-14"
+        }
+      }
+    ],
+    "questions": [
+      "靶材领先是否延续，CMP是否相对增强？",
+      "零部件、EDA、设备是否同步，还是局部个股强势？",
+      "靶材向其他方向轮动只是待验证假设。"
+    ],
+    "rules": {
+      "version": "theme-rules/1.0",
+      "enabled": [
+        "relative",
+        "high",
+        "risk",
+        "price"
+      ],
+      "relative3": 1,
+      "relative5": 1,
+      "highDays": 20,
+      "confirmChecks": 2,
+      "minCoverage": 0.8,
+      "breadth": 0.6,
+      "minLinked": 2,
+      "requireVolume": false,
+      "volumeRatio": 1.3
+    },
+    "priceLines": [],
+    "notify": true
+  },
+  {
+    "id": "embodied-ai",
+    "version": 1,
+    "effectiveAt": "2026-11-13T00:00:00+08:00",
+    "name": "具身智能",
+    "scope": "精选本体与数据仿真两个环节，不代表具身智能全产业。",
+    "purpose": "本体与仿真是否出现有限的跨环节同步？",
+    "segments": [
+      "机器人本体",
+      "数据与仿真",
+      "感知与控制",
+      "关键零部件",
+      "场景应用"
+    ],
+    "members": [
+      {
+        "symbol": "sz301313",
+        "name": "凡拓数创",
+        "aliases": [
+          "凡拓数据"
+        ],
+        "role": "core",
+        "segments": [
+          "数据与仿真",
+          "场景应用"
+        ],
+        "reason": "年报披露数字孪生与物理AI工具链；项目披露不等于新业务已贡献主要利润",
+        "sources": [
+          {
+            "url": "https://static.cninfo.com.cn/finalpage/2026-04-28/1225215754.PDF",
+            "title": "凡拓数创公开业务资料",
+            "claim": "年报披露数字孪生与物理AI工具链；项目披露不等于新业务已贡献主要利润",
+            "type": "disclosure",
+            "checkedAt": "2026-11-13",
+            "publishedAt": null
+          }
+        ],
+        "verified": true,
+        "listing": {
+          "status": "listed",
+          "date": null,
+          "source": "https://static.cninfo.com.cn/finalpage/2026-04-28/1225215754.PDF"
+        },
+        "business": {
+          "disclosed": "年报披露数字孪生与物理AI工具链；项目披露不等于新业务已贡献主要利润",
+          "products": "AI3D数字孪生、仿真平台",
+          "commercial": "公司披露2026年4月仿真平台开发服务项目中标；未独立验证回款与验收",
+          "contribution": "AI3D产品口径不等于具身智能独立收入，未取得该业务利润拆分",
+          "inference": "作为该环节的精选观察对象，不代表投资价值或供应链因果关系已验证",
+          "unknowns": [
+            "最新订单、收入贡献与价格变化原因需另行核实"
+          ]
+        }
+      },
+      {
+        "symbol": "sh688836",
+        "name": "宇树科技",
+        "aliases": [],
+        "role": "core",
+        "segments": [
+          "机器人本体"
+        ],
+        "reason": "公司介绍足式/人形机器人及机械臂；上交所已公告2026-08-19上市",
+        "sources": [
+          {
+            "url": "https://www.unitree.com/operate/company/",
+            "title": "宇树科技公开业务资料",
+            "claim": "公司介绍足式/人形机器人及机械臂；上交所已公告2026-08-19上市",
+            "type": "company",
+            "checkedAt": "2026-11-13",
+            "publishedAt": null
+          }
+        ],
+        "verified": true,
+        "listing": {
+          "status": "listed",
+          "date": "2026-08-19",
+          "source": "https://www.sse.com.cn/disclosure/announcement/listing/ipo/c/c_20260818_10829204.shtml"
+        },
+        "business": {
+          "disclosed": "公司介绍足式/人形机器人及机械臂；上交所已公告2026-08-19上市",
+          "products": "足式、人形机器人及灵巧机械臂",
+          "commercial": "本配置只核实业务关联，未独立核验本期订单与兑现情况",
+          "contribution": "本配置未提取该方向的独立收入/利润占比",
+          "inference": "作为该环节的精选观察对象，不代表投资价值或供应链因果关系已验证",
+          "unknowns": [
+            "最新订单、收入贡献与价格变化原因需另行核实"
+          ]
+        }
+      }
+    ],
+    "benchmarks": [
+      {
+        "id": "CSI300",
+        "symbol": "sh000300",
+        "name": "沪深300",
+        "scope": "共同市场宽基；指数点位，非全A股",
+        "role": "market",
+        "source": {
+          "url": "https://www.csindex.com.cn/#/indices/family/detail?indexCode=000300",
+          "title": "沪深300指数",
+          "claim": "共同市场基准",
+          "type": "exchange",
+          "checkedAt": "2026-11-13",
+          "publishedAt": null
+        }
+      }
+    ],
+    "questions": [
+      "本体与仿真是否出现有限的跨环节同步？",
+      "各细分只有一只代表时不能确认细分广度。"
+    ],
+    "rules": {
+      "version": "theme-rules/1.0",
+      "enabled": [
+        "relative",
+        "high",
+        "risk",
+        "price"
+      ],
+      "relative3": 1,
+      "relative5": 1,
+      "highDays": 20,
+      "confirmChecks": 2,
+      "minCoverage": 0.8,
+      "breadth": 0.6,
+      "minLinked": 2,
+      "requireVolume": false,
+      "volumeRatio": 1.3
+    },
+    "priceLines": [],
+    "notify": true
+  },
+  {
+    "id": "edge-ai",
+    "version": 1,
+    "effectiveAt": "2026-11-13T00:00:00+08:00",
+    "name": "端侧AI",
+    "scope": "限端边侧视觉处理、智能视频与相关AI SoC，不涵盖全部端侧AI，更不含云端训练算力。",
+    "purpose": "富瀚微、星宸科技是否同步增强，还是单股领先？",
+    "segments": [
+      "视觉与视频SoC"
+    ],
+    "members": [
+      {
+        "symbol": "sz300613",
+        "name": "富瀚微",
+        "aliases": [],
+        "role": "core",
+        "segments": [
+          "视觉与视频SoC"
+        ],
+        "reason": "以视频为核心的SoC及ISP芯片，智慧视频和相关端侧应用",
+        "sources": [
+          {
+            "url": "https://www.fullhan.com/index.php?a=type&c=article&tid=7",
+            "title": "富瀚微公开业务资料",
+            "claim": "以视频为核心的SoC及ISP芯片，智慧视频和相关端侧应用",
+            "type": "company",
+            "checkedAt": "2026-11-13",
+            "publishedAt": null
+          }
+        ],
+        "verified": true,
+        "listing": {
+          "status": "listed",
+          "date": null,
+          "source": "https://www.fullhan.com/index.php?a=type&c=article&tid=7"
+        },
+        "business": {
+          "disclosed": "以视频为核心的SoC及ISP芯片，智慧视频和相关端侧应用",
+          "products": "以视频为核心的SoC及ISP芯片，智慧视频和相关端侧应用",
+          "commercial": "本配置只核实业务关联，未独立核验本期订单与兑现情况",
+          "contribution": "本配置未提取该方向的独立收入/利润占比",
+          "inference": "作为该环节的精选观察对象，不代表投资价值或供应链因果关系已验证",
+          "unknowns": [
+            "最新订单、收入贡献与价格变化原因需另行核实"
+          ]
+        }
+      },
+      {
+        "symbol": "sz301536",
+        "name": "星宸科技",
+        "aliases": [],
+        "role": "core",
+        "segments": [
+          "视觉与视频SoC"
+        ],
+        "reason": "披露视觉AI SoC及端边侧计算SoC进展；流片不等于量产收入",
+        "sources": [
+          {
+            "url": "https://static.cninfo.com.cn/finalpage/2026-03-10/1225002028.PDF",
+            "title": "星宸科技公开业务资料",
+            "claim": "披露视觉AI SoC及端边侧计算SoC进展；流片不等于量产收入",
+            "type": "disclosure",
+            "checkedAt": "2026-11-13",
+            "publishedAt": null
+          }
+        ],
+        "verified": true,
+        "listing": {
+          "status": "listed",
+          "date": null,
+          "source": "https://static.cninfo.com.cn/finalpage/2026-03-10/1225002028.PDF"
+        },
+        "business": {
+          "disclosed": "披露视觉AI SoC及端边侧计算SoC进展；流片不等于量产收入",
+          "products": "披露视觉AI SoC及端边侧计算SoC进展；流片不等于量产收入",
+          "commercial": "本配置只核实业务关联，未独立核验本期订单与兑现情况",
+          "contribution": "本配置未提取该方向的独立收入/利润占比",
+          "inference": "作为该环节的精选观察对象，不代表投资价值或供应链因果关系已验证",
+          "unknowns": [
+            "最新订单、收入贡献与价格变化原因需另行核实"
+          ]
+        }
+      }
+    ],
+    "benchmarks": [
+      {
+        "id": "CSI300",
+        "symbol": "sh000300",
+        "name": "沪深300",
+        "scope": "共同市场宽基；指数点位，非全A股",
+        "role": "market",
+        "source": {
+          "url": "https://www.csindex.com.cn/#/indices/family/detail?indexCode=000300",
+          "title": "沪深300指数",
+          "claim": "共同市场基准",
+          "type": "exchange",
+          "checkedAt": "2026-11-13",
+          "publishedAt": null
+        }
+      },
+      {
+        "id": "159995",
+        "symbol": "sz159995",
+        "name": "华夏国证半导体芯片ETF",
+        "scope": "广义半导体芯片ETF辅助基准，不是端侧AI指数；有溢价/跟踪误差",
+        "role": "theme",
+        "source": {
+          "url": "https://www.chinaamc.com/fund/159995/index.shtml?source=click",
+          "title": "华夏159995产品页",
+          "claim": "国证半导体芯片ETF",
+          "type": "fund",
+          "checkedAt": "2026-11-13",
+          "publishedAt": null
+        }
+      }
+    ],
+    "questions": [
+      "富瀚微、星宸科技是否同步增强，还是单股领先？",
+      "相对芯片基准是否增强，而非普遍半导体行情？"
+    ],
+    "rules": {
+      "version": "theme-rules/1.0",
+      "enabled": [
+        "relative",
+        "high",
+        "risk",
+        "price"
+      ],
+      "relative3": 1,
+      "relative5": 1,
+      "highDays": 20,
+      "confirmChecks": 2,
+      "minCoverage": 0.8,
+      "breadth": 0.6,
+      "minLinked": 2,
+      "requireVolume": false,
+      "volumeRatio": 1.3
+    },
+    "priceLines": [],
+    "notify": true
+  }
+]
