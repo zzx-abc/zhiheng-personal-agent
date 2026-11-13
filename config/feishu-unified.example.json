@@ -1,0 +1,10 @@
+{
+  "environment": "production",
+  "appId": "cli_REPLACE_FROM_EXISTING_APP",
+  "tenantKey": "REPLACE_WITH_VERIFIED_TENANT",
+  "ownerOpenId": "ou_REPLACE_EXISTING_AUTHORIZED_OWNER",
+  "botOpenId": "ou_REPLACE_FROM_BOT_INFO_API",
+  "radarChatId": "oc_REPLACE_WITH_CONFIRMED_RADAR_GROUP",
+  "taskIds": ["00000000-0000-4000-8000-000000000001"],
+  "enabled": false
+}

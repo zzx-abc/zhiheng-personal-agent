@@ -1,0 +1,44 @@
+import {readFileSync,existsSync} from 'node:fs';
+import path from 'node:path';
+import {z} from 'zod';
+import {db,dataDir,one,all,exec,now} from '../db';
+import {connection} from './config';
+import '../observation/db';
+export const profileSchema=z.object({environment:z.enum(['production','test']),appId:z.string().regex(/^cli_/),tenantKey:z.string().min(1),ownerOpenId:z.string().regex(/^ou_/),botOpenId:z.string().regex(/^ou_/),radarChatId:z.string().regex(/^oc_/),taskIds:z.array(z.string().uuid()).min(1),enabled:z.boolean().default(false)});
+export type Profile=z.infer<typeof profileSchema>;
+export const profilePath=path.join(dataDir,'feishu-unified.json');
+export function profile():Profile|null{try{const p=profileSchema.parse(JSON.parse(readFileSync(profilePath,'utf8')));return p;}catch{return null;}}
+export function profilePresent(){return existsSync(profilePath);}
+export type Scope={app:string;tenant:string;sender:string;chat:string;scene:'p2p'|'group';thread:string;generation:number;eventId:string;messageId:string};
+db.exec(`
+CREATE TABLE IF NOT EXISTS feishu_scopes(run_id TEXT PRIMARY KEY REFERENCES runs(id) ON DELETE CASCADE,app TEXT NOT NULL,tenant TEXT NOT NULL,sender TEXT NOT NULL,chat TEXT NOT NULL,scene TEXT NOT NULL,thread TEXT NOT NULL,generation INTEGER NOT NULL,event_id TEXT NOT NULL,message_id TEXT NOT NULL,UNIQUE(app,tenant,event_id),UNIQUE(app,tenant,message_id));
+CREATE TABLE IF NOT EXISTS radar_event_refs(number INTEGER PRIMARY KEY AUTOINCREMENT,signal_id TEXT UNIQUE NOT NULL REFERENCES observation_signals(id) ON DELETE CASCADE);
+CREATE TABLE IF NOT EXISTS feishu_event_messages(app TEXT NOT NULL,tenant TEXT NOT NULL,chat TEXT NOT NULL,message_id TEXT NOT NULL,signal_id TEXT NOT NULL REFERENCES observation_signals(id) ON DELETE CASCADE,parent TEXT,notification_id TEXT,channel TEXT NOT NULL,created_at TEXT NOT NULL,PRIMARY KEY(app,tenant,chat,message_id,signal_id));
+CREATE TABLE IF NOT EXISTS feishu_handoffs(code TEXT PRIMARY KEY,app TEXT NOT NULL,tenant TEXT NOT NULL,sender TEXT NOT NULL,source_chat TEXT NOT NULL,source_message TEXT NOT NULL,signal_id TEXT NOT NULL REFERENCES observation_signals(id) ON DELETE CASCADE,action TEXT NOT NULL,expires_at TEXT NOT NULL,status TEXT NOT NULL,created_at TEXT NOT NULL,UNIQUE(app,tenant,source_message,sender));
+CREATE TABLE IF NOT EXISTS feishu_private_refs(app TEXT NOT NULL,tenant TEXT NOT NULL,chat TEXT NOT NULL,message_id TEXT NOT NULL,sender TEXT NOT NULL,entry_id TEXT NOT NULL REFERENCES library_entries(id) ON DELETE CASCADE,PRIMARY KEY(app,tenant,chat,message_id,sender,entry_id));
+CREATE TABLE IF NOT EXISTS feishu_event_records(signal_id TEXT NOT NULL REFERENCES observation_signals(id) ON DELETE CASCADE,owner TEXT NOT NULL,entry_id TEXT NOT NULL REFERENCES library_entries(id) ON DELETE CASCADE,PRIMARY KEY(signal_id,owner));
+CREATE TABLE IF NOT EXISTS feishu_radar_route(id INTEGER PRIMARY KEY CHECK(id=1),channel TEXT NOT NULL,version INTEGER NOT NULL,cutoff TEXT NOT NULL,profile TEXT NOT NULL);
+INSERT OR IGNORE INTO feishu_radar_route VALUES(1,'webhook',1,'','');
+CREATE TABLE IF NOT EXISTS feishu_event_deliveries(signal_id TEXT NOT NULL REFERENCES observation_signals(id) ON DELETE CASCADE,logical_target TEXT NOT NULL,receipt_id TEXT NOT NULL,PRIMARY KEY(signal_id,logical_target));
+CREATE TABLE IF NOT EXISTS feishu_delivery_meta(receipt_id TEXT PRIMARY KEY,business_key TEXT UNIQUE NOT NULL,logical_target TEXT NOT NULL,audience TEXT NOT NULL,channel TEXT NOT NULL,route_version INTEGER NOT NULL,content_version INTEGER NOT NULL,platform_message_id TEXT,app TEXT NOT NULL,tenant TEXT NOT NULL,chat TEXT NOT NULL);
+CREATE TABLE IF NOT EXISTS feishu_delivery_attempts(id INTEGER PRIMARY KEY AUTOINCREMENT,receipt_id TEXT NOT NULL,attempted_at TEXT NOT NULL,status TEXT NOT NULL,platform_message_id TEXT,error TEXT);
+CREATE TABLE IF NOT EXISTS feishu_route_audit(id INTEGER PRIMARY KEY AUTOINCREMENT,at TEXT NOT NULL,previous TEXT NOT NULL,next TEXT NOT NULL,version INTEGER NOT NULL,cutoff TEXT NOT NULL);
+`);
+export function scopeFor(runId:string){const r=one<any>('SELECT * FROM feishu_scopes WHERE run_id=?',runId);return r?{...r,eventId:r.event_id,messageId:r.message_id} as Scope:null;}
+export function permitted(s:Scope,privateData=false){const p=profile(),c=connection();return !!(p?.enabled&&c?.enabled&&p.appId===c.appId&&s.app===p.appId&&s.tenant===p.tenantKey&&s.sender===p.ownerOpenId&&c.allowedUsers.includes(s.sender)&&s.generation===c.generation&&((p.environment==='test')===(process.env.AGENT_TEST_MODE==='1'))&&(s.scene==='p2p'&&s.chat!==p.radarChatId||!privateData&&s.scene==='group'&&s.chat===p.radarChatId));}
+export function requireScope(s:Scope,privateData=false){if(!permitted(s,privateData))throw Error('本次会话没有访问权限');}
+export function taskAllowed(s:Scope,task:string){return permitted(s)&&profile()!.taskIds.includes(task);}
+export function scopeKey(s:Scope){return JSON.stringify([s.app,s.tenant,s.chat,s.thread,s.sender]);}
+export function catalog(){exec('INSERT OR IGNORE INTO radar_event_refs(signal_id) SELECT s.id FROM observation_signals s WHERE NOT EXISTS(SELECT 1 FROM radar_event_refs e WHERE e.signal_id=s.id) ORDER BY s.created_at,s.rowid');}
+export type RadarEvent={number:number;id:string;task_id:string;run_id:string;payload:string;created_at:string;config_version:number;epoch:number;frame_id:string|null;result:string|null};
+const eventSQL='SELECT e.number,s.*,c.config_version,c.epoch,c.frame_id,r.result FROM radar_event_refs e JOIN observation_signals s ON s.id=e.signal_id JOIN observation_checks c ON c.run_id=s.run_id JOIN runs r ON r.id=s.run_id';
+export function eventBy(s:Scope,number:number){requireScope(s);catalog();const e=one<RadarEvent>(eventSQL+' WHERE e.number=?',number);return e&&taskAllowed(s,e.task_id)?e:null;}
+export function eventBySignal(s:Scope,key:string){requireScope(s);catalog();const e=one<RadarEvent>(eventSQL+' WHERE s.id=?',key);return e&&taskAllowed(s,e.task_id)?e:null;}
+export function candidates(s:Scope){requireScope(s);catalog();return all<RadarEvent>(eventSQL+' ORDER BY e.number DESC').filter(e=>taskAllowed(s,e.task_id)).slice(0,3);}
+export function mapped(s:Scope,message:string){requireScope(s);return all<{signal_id:string}>('SELECT signal_id FROM feishu_event_messages WHERE app=? AND tenant=? AND chat=? AND message_id=?',s.app,s.tenant,s.chat,message).map(x=>eventBySignal(s,x.signal_id)).filter((e):e is RadarEvent=>!!e);}
+export function previous(s:Scope,e:RadarEvent){requireScope(s);const p=JSON.parse(e.payload);return all<RadarEvent>(eventSQL+' WHERE s.task_id=? AND e.number<? AND c.config_version=? AND c.epoch=? ORDER BY e.number DESC',e.task_id,e.number,e.config_version,e.epoch).find(x=>{const q=JSON.parse(x.payload);const sameCondition=p.groupId&&q.groupId||Array.isArray(p.conditionIds)&&p.conditionIds.length&&Array.isArray(q.conditionIds)&&JSON.stringify([...p.conditionIds].sort())===JSON.stringify([...q.conditionIds].sort());return sameCondition&&(q.objectId||q.groupId)===(p.objectId||p.groupId)&&q.kind===p.kind&&q.phase===p.phase;})||null;}
+export function eventText(e:RadarEvent){const p=JSON.parse(e.payload),r=JSON.parse(one<{detail:string}>('SELECT detail FROM observation_checks WHERE run_id=?',e.run_id)?.detail||'{}'),report=r.themeReport;const stocks=(report?.themes||[]).flatMap((t:any)=>t.stocks||[]).filter((x:any)=>String(p.objectId||'').split(',').includes(x.symbol));const themes=(report?.themes||[]).filter((t:any)=>(p.themeIds||[]).includes(t.id));return [`E-${e.number} · ${(p.names||[p.objectId||p.groupId||'信号']).join(' / ')}`,`条件 ${p.kind}；阶段 ${p.phase}；规则配置 v${e.config_version}；轮次 ${e.epoch}`,`发现/创建于 ${e.created_at}；当时行情采集 ${report?.observedAt||r.observedAt||'原事件未提供'}`,String(p.change||''),p.explanation||'',p.metric?'当时实际值（原始口径）：'+JSON.stringify(p.metric):'',...(p.evidence||[]).map((x:unknown)=>typeof x==='string'?x:JSON.stringify(x)),...stocks.map((x:any)=>`${x.name}：${x.price}，行情时间 ${x.quoteAt||'未知'}；条件 ${JSON.stringify(x.conditions)}；缺口 ${(x.missing||[]).join('；')}；来源 ${(x.sources||[]).map((y:any)=>y.url).join(' ')}`),...themes.map((t:any)=>`主题 ${t.name}：${t.status}；缺口 ${(t.missing||[]).join('；')}`),`后续条件：${p.next||'未提供'}`,'这是当时的市场证据，不等于订单、收入或个人持仓判断得到验证；没有查询最新行情。'].filter(Boolean).join('\n').slice(0,5800);}
+export function mapMessage(s:Pick<Scope,'app'|'tenant'|'chat'>,message:string,events:RadarEvent[],receipt:string,parent:string|null=null){for(const e of events)exec('INSERT OR IGNORE INTO feishu_event_messages VALUES(?,?,?,?,?,?,?,?,?)',s.app,s.tenant,s.chat,message,e.id,parent,receipt,'app',now());}
+export type Route={channel:'webhook'|'app';version:number;cutoff:string;profile:string};
+export const radarRoute=()=>one<Route>('SELECT * FROM feishu_radar_route WHERE id=1')!;
+export const profileFingerprint=()=>{const p=profile();return p?JSON.stringify(p):'';};
