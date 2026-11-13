@@ -36,3 +36,39 @@ test('interrupted parsing gets bounded recovery but model failure is not blindly
 test('shared outbox queues one final Feishu card and never sends test traffic externally',async()=>{f.saveConnection({appId:'cli_synthetic',appSecret:'synthetic-secret-for-tests',allowedUsers:['ou_allowed'],allowedChats:[],enabled:true,collectionMode:true});const event={sender:{sender_type:'user',sender_id:{open_id:'ou_allowed'}},message:{message_id:'om_outbox',chat_id:'oc_allowed',message_type:'text',content:JSON.stringify({text:'记一下：测试需求证据'})}};const accepted=receiver.receiveMessage(event) as any;const run=sql.one<any>('SELECT * FROM runs WHERE id=?',accepted.runId)!;await receiver.processFeishu(run,{download:async()=>Buffer.alloc(0),reply:async()=>({code:0})});n.collectNotifications();n.collectNotifications();assert.equal(sql.all("SELECT * FROM notification_outbox WHERE kind='library_feishu'").length,1);await n.deliverNotification();assert.equal(sql.one<any>('SELECT status FROM notification_outbox')!.status,'cancelled');assert.equal(s.listEntries().length,1);});
 test('ambiguous Feishu correction never changes multiple possible targets',async()=>{const first=receive().entryIds[0],second=receive({text:'另一份测试资料'}).entryIds[0];f.saveConnection({appId:'cli_synthetic',appSecret:'synthetic-secret-for-tests',allowedUsers:['ou_allowed'],allowedChats:[],enabled:true,collectionMode:false});sql.exec('INSERT INTO feishu_replies VALUES(?,?,?,NULL,?)','om_multiple','oc_allowed',JSON.stringify([first,second]),sql.now());const accepted=receiver.receiveMessage({sender:{sender_type:'user',sender_id:{open_id:'ou_allowed'}},message:{message_id:'om_ambiguous',parent_id:'om_multiple',chat_id:'oc_allowed',message_type:'text',content:JSON.stringify({text:'纠正：我不是看好'})}}) as any;const run=sql.one<any>('SELECT * FROM runs WHERE id=?',accepted.runId)!;await receiver.processFeishu(run,{download:async()=>Buffer.alloc(0),reply:async()=>({code:0})});assert.equal(s.entry(first).version,1);assert.equal(s.entry(second).version,1);assert.match(sql.one<any>('SELECT result FROM runs WHERE id=?',run.id)!.result,/无法唯一/);});
 test('real local embeddings are version-filtered and removed with the record',async t=>{if(!existsSync(path.join(process.cwd(),'data/models/Xenova/multilingual-e5-small'))){t.skip('local model not installed');return;}const key=receive({instruction:'测试样例：学习库存周转和利润兑现的方法'}).entryIds[0];await processEntry(key);try{process.env.AGENT_TEST_MODE='0';await s.indexLibrary();const index=sql.one<any>('SELECT * FROM library_index WHERE entry_id=?',key)!;assert.ok(index.vector);assert.ok(JSON.parse(index.vector).length>0);s.annotate(key,'只关注现金回款','correction');assert.equal(sql.one<any>('SELECT vector FROM library_index WHERE entry_id=?',key)!.vector,null);s.deleteEntry(key,2);assert.equal(sql.one('SELECT entry_id FROM library_index WHERE entry_id=?',key),undefined);}finally{process.env.AGENT_TEST_MODE='1';}});
+
+async function postMessage(content:any,transport:any,parent?:string){
+ f.saveConnection({appId:'cli_synthetic',appSecret:'synthetic-secret-for-tests',allowedUsers:['ou_allowed'],allowedChats:[],enabled:true,collectionMode:false});
+ const accepted=receiver.receiveMessage({sender:{sender_type:'user',sender_id:{open_id:'ou_allowed'}},message:{message_id:'om_'+sql.id(),chat_id:'oc_allowed',parent_id:parent,message_type:'post',content:JSON.stringify(content)}}) as any;
+ const run=sql.one<any>('SELECT * FROM runs WHERE id=?',accepted.runId)!;await receiver.processFeishu(run,transport);return sql.one<any>('SELECT * FROM runs WHERE id=?',run.id)!;
+}
+test('Feishu desktop post files preserve the PDF and caption together, without duplicate v2 text',async()=>{
+ const text='帮我收一下，测试样例：我想核实需求改善的依据。',nodes=[[{tag:'text',text,style:[]}]];
+ let downloads=0;const run=await postMessage({title:'',content:nodes,content_v2:nodes,files:[{file_key:'synthetic_pdf',file_name:'SYNTHETIC-report.pdf',is_folder:false}]},{download:async(_id:string,key:string,type:string)=>{downloads++;assert.equal(key,'synthetic_pdf');assert.equal(type,'file');return twoPagePdf()},reply:async()=>({code:0})});
+ assert.equal(run.status,'succeeded');assert.equal(downloads,1);assert.equal(s.listEntries().length,1);const e=s.listEntries()[0];assert.equal(e.kind,'report');assert.equal((s.detail(e.id).annotations[0] as any).body,text);await processEntry(e.id);assert.match((s.chunks(e.id)[0] as any).body,/SYNTHETIC TEST/);
+ assert.equal(sql.one<any>('SELECT instruction FROM library_ingestions WHERE message_id IN (SELECT message_id FROM feishu_inbox WHERE run_id=?)',run.id)!.instruction,text);
+});
+test('post attachment caption cannot accidentally modify the replied-to record',async()=>{
+ const prior=receive().entryIds[0];sql.exec('INSERT INTO feishu_replies VALUES(?,?,?,NULL,?)','om_existing','oc_allowed',JSON.stringify([prior]),sql.now());
+ await postMessage({content:[[{tag:'text',text:'纠正：这是新附件的说明'}]],files:[{file_key:'synthetic_pdf',file_name:'test.pdf'}]},{download:async()=>twoPagePdf(),reply:async()=>({code:0})},'om_existing');
+ assert.equal(s.entry(prior).version,1);assert.equal(s.listEntries('pending').length,1);assert.equal((s.detail(s.listEntries('pending')[0].id).annotations[0] as any).body,'纠正：这是新附件的说明');
+ const failed=await postMessage({files:[{file_key:'failed',file_name:'sample.pdf'}]},{download:async()=>{throw Error('failed')},reply:async()=>({code:0})},'om_existing');assert.deepEqual(JSON.parse(failed.result).feishu.entryIds,[]);
+});
+test('post normalizer supports images, links and localized payloads without duplicating attachments',async()=>{
+ const {readPost}=await import('../server/feishu/content');const result=readPost({zh_cn:{title:'测试',content:[[{tag:'a',text:'来源',href:'https://example.com/report'}],[{tag:'img',image_key:'synthetic_image'}],[{tag:'file',file_key:'synthetic_file',file_name:'sample.pdf'}]],files:[{file_key:'synthetic_file',file_name:'sample.pdf'}]}});
+ assert.equal(result.attachments.length,2);assert.equal(result.attachments[0].type,'image');assert.match(result.text,/https:\/\/example.com/);assert.equal(result.unsupported.length,0);
+});
+test('post batch download failure, folders and excess files never claim a saved attachment',async()=>{
+ let calls=0;const transport={download:async()=>{if(++calls===2)throw Error('synthetic download failure');return twoPagePdf()},reply:async()=>({code:0})};
+ const run=await postMessage({content:[[{tag:'text',text:'帮我收一下'}]],files:[{file_key:'one',file_name:'one.pdf'},{file_key:'two',file_name:'two.pdf'}]},transport);
+ assert.equal(run.status,'failed');assert.equal(s.listEntries().length,0);
+ await postMessage({files:[{file_key:'folder',file_name:'folder',is_folder:true}]},{download:async()=>{assert.fail('folder download')},reply:async()=>({code:0})});assert.equal(s.listEntries().length,0);
+ const many=await postMessage({files:Array.from({length:6},(_,i)=>({file_key:'test'+i,file_name:'sample.pdf'}))},{download:async()=>{assert.fail('over-limit download')},reply:async()=>({code:0})});assert.equal(many.status,'failed');
+});
+test('post download rechecks application authorization before saving',async()=>{
+ const run=await postMessage({content:[[{tag:'text',text:'帮我收一下'}]],files:[{file_key:'test',file_name:'sample.pdf'}]},{download:async()=>{f.saveConnection({appId:'cli_synthetic',appSecret:'synthetic-secret-for-tests',allowedUsers:['ou_changed'],allowedChats:[],enabled:true,collectionMode:false});return twoPagePdf()},reply:async()=>({code:0})});
+ assert.equal(run.status,'failed');assert.equal(s.listEntries().length,0);
+});
+test('text-only rich messages retain explicit note intent',async()=>{
+ const run=await postMessage({title:'',content_v2:[[{tag:'md',text:'记一下：测试样例，我还没有认同这个观点。'}]]},{download:async()=>{assert.fail('no attachments')},reply:async()=>({code:0})});assert.equal(run.status,'succeeded');assert.equal(s.listEntries()[0].kind,'note');
+});
