@@ -1,3 +1,6 @@
+import {interpretArchived} from '../observation/report-read';
+import {observationConfigSchema} from '../observation/types';
+import {summaryText,evidenceText,buildDecisions} from '../observation/strategy';
 import {db,one,all,exec,now,id,transaction} from '../db';
 import {requireScope,taskAllowed,type Scope,radarRoute} from './unified-store';
 import {startAttempt,finishAttempt} from './radar-delivery';
@@ -18,15 +21,15 @@ export function mapCheckMessage(s:Scope,message:string,keys:string[],receipt:str
 const stamp=(at:string)=>Number.isFinite(Date.parse(at))?new Date(at).toLocaleString('zh-CN',{timeZone:'Asia/Shanghai',hour12:false})+' 北京时间':'原始时间缺失';
 const num=(x:unknown,suffix='')=>typeof x==='number'&&Number.isFinite(x)?x.toFixed(2)+suffix:'缺失';
 export function checkText(check:Check,detailed=false,question=''){
- const data=JSON.parse(check.detail),report=data.themeReport,frame=JSON.parse(check.payload);
- const matching=report.themes.filter((t:any)=>question.includes(t.name)||t.stocks?.some((s:any)=>question.includes(s.name)||question.includes(s.symbol)));
- const themes=matching.length?matching:report.themes;
- const lines=[`R-${check.number} · 雷达检查快照${frame.synthetic?'（合成测试数据）':''}`,`采集时间：${stamp(report.observedAt)}；这是历史数据，不是当前行情。`,
- check.outcome==='baseline'?'检查性质：建立基线。此轮按规则不产生新触发提醒；不等于所有股票都未满足条件。':check.outcome==='no_new_signal'?'检查性质：本轮未产生新信号；不等于行情没有变化。':`检查性质：${check.outcome}`,
- `原配置 v${check.config_version}；运行轮次 ${check.epoch}。行情来源：${frame.provider||'未提供'}。`,
- ...themes.flatMap((t:any)=>[`${t.name}：${t.status}；可比较 ${t.valid}/${t.configured} 只。`,...(detailed?[`原检查变化：${t.change||'未提供'}`,`主要缺口：${(t.missing||[]).join('；')||'原记录未列出，不代表不存在缺口'}`,'以下最多展示4只核心股票的条件，未展示部分不代表不存在。', ...t.stocks.filter((s:any)=>s.role==='core').slice(0,4).flatMap((s:any)=>[`${s.name}：${num(s.price,'元')}，行情时间 ${s.quoteAt||'缺失'}；完整3/5日相对表现 ${num(s.relative3,'pp')}/${num(s.relative5,'pp')}。`,...s.conditions.slice(0,4).map((c:any)=>`  ${c.label}：${c.met===true?'满足':c.met===false?'未满足':'无法确认'}；实际 ${num(c.actual)} / 阈值 ${num(c.threshold)}；${c.basis||''}${c.disabledReason?'；'+c.disabledReason:''}`),`  待核实：${(s.missing||[]).join('；')||s.next||'见检查原文'}`])]:[])]),
- '市场相对表现不能替代订单、收入等产业证据，也不代表买卖建议。'];
- return lines.join('\n').slice(0,6500);
+ const data=JSON.parse(check.detail),frame=JSON.parse(check.payload);let report={events:[],states:[],window:{start3:null,start5:null,end:null,basis:'旧报告未记录计算区间'},phase:'历史阶段见原始证据',baseline:check.outcome==='baseline',...data.themeReport};
+ // Read-only interpretation of archived evidence. Never fetch current data or create events here.
+ if(!report.decision&&frame.themeConfigs?.length){const stored=one<{config:string}>('SELECT config FROM observation_configs WHERE task_id=? AND version=?',check.task_id,check.config_version);if(stored)report=interpretArchived(report,frame,observationConfigSchema.parse(JSON.parse(stored.config)))?.themeReport||report;}
+ if(!report.decision)report={...report,decision:buildDecisions(report)};
+ const intro=`R-${check.number} · 历史检查${frame.synthetic?'（合成测试数据，未经独立行情核验）':''}；采集 ${stamp(report.observedAt)}。不是当前行情。`;
+ if(/诊断/.test(question))return intro+'\n'+JSON.stringify({configVersion:check.config_version,epoch:check.epoch,outcome:check.outcome,provider:frame.provider,mode:report.mode,issues:frame.issues,coverage:frame.coverage},null,2);
+ if(/全部对象/.test(question))return intro+'\n'+[...report.decision.risks,...report.decision.opportunities,...report.decision.others].map((x:any)=>`${x.theme}·${x.name}：${x.reasons.join('；')||'证据待补齐'}；${x.actions[0].label}`).join('\n');
+ const page=Math.max(1,Number(question.match(/第?(\d+)页/)?.[1]||1));
+ return intro+'\n'+(detailed?evidenceText(report,question,page):summaryText(report,'历史检查只读解读'))+'\n查看证据 / 查看全部对象 / 运行诊断：回复本条并发送对应文字；私聊可带 R-'+check.number+' 查阅。';
 }
 export function routeCheck(s:Scope,text:string,row:{parent?:string|null}){
  requireScope(s);const refs=[...text.matchAll(/\bR-(\d+)\b/gi)].map(m=>+m[1]);if(/\bE-\d+\b/i.test(text)){if(refs.length)return {text:'这次同时提到了信号与检查快照，请明确要解释哪个编号。',entryIds:[]};return null;}
@@ -44,7 +47,7 @@ export function routeCheck(s:Scope,text:string,row:{parent?:string|null}){
  if(checks.length!==1)return {text:'无法唯一确定可访问的检查快照，请回复对应消息或提供一个 R-编号。',entryIds:[]};
  const check=checks[0];
  if(/结合|我的|个人|收藏|记下来|保存|暂停/.test(text))return {text:s.scene==='group'?`个人资料不会在群里读取。请在私聊发送 R-${check.number} 查看这份历史检查；快照暂只支持事实查询，个人资料联合分析需使用真实触发事件的E编号。`:'这份R编号目前支持检查事实与同配置比较，尚未接入快照收藏或个人资料联合分析；没有执行这些操作。',entryIds:[],checks:[check.run_id]};
- let response=checkText(check,true,text);
+ let response=checkText(check,/证据|详情|条件|第?\d+页/.test(text),text);
  if(/上次|变化|不同|比较|对比/.test(text)){const prior=one<{run_id:string}>("SELECT c.run_id FROM observation_checks c JOIN runs r ON r.id=c.run_id WHERE c.task_id=? AND c.config_version=? AND c.epoch=? AND c.created_at<? AND c.frame_id IS NOT NULL AND r.status IN ('succeeded','partial') ORDER BY c.created_at DESC LIMIT 1",check.task_id,check.config_version,check.epoch,check.created_at);if(prior){const before=referenceCheck(s,prior.run_id);response+='\n对照同任务、同配置版本、同运行轮次的上次检查：\n'+checkText(before,false);}else response+='\n没有同任务、同配置版本和同轮次的上一份检查，不能把旧行业模式的结果当作本次主题检查的上次结果。';}
  return {text:response,entryIds:[],checks:[check.run_id]};
 }

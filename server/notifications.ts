@@ -1,3 +1,5 @@
+import {catalog as radarCatalog} from './feishu/unified-store';
+import {strategyCard} from './feishu/strategy-card';
 import {stampDelivery,routeGuard,startAttempt,finishAttempt,sendRadar,routeReady} from './feishu/radar-delivery';
 import {radarRoute,profile,profilePresent} from './feishu/unified-store';
 import {feishuResult,sendFeishu} from './feishu/receiver';
@@ -79,7 +81,7 @@ const stamp=(at:string)=>new Date(at).toLocaleString('zh-CN',{timeZone:'Asia/Sha
 export function notificationText(item:Receipt){
  if(item.kind==='test')return '知衡 · 飞书连接测试\n这是一条测试通知，不是投资分析。\n之后可接收每周回顾与委托核实任务的结果。自动通知是否开启，以知衡设置为准。';
  const run=one<Run&{finished_at:string}>('SELECT * FROM runs WHERE id=?',item.run_id);if(!run||!eligible(run)||!current(run))return null;
- if(run.mode==='observation')return clip(JSON.parse(run.result||'{}').observation?.text,7000)||null;
+ if(run.mode==='observation'){const text=clip(JSON.parse(run.result||'{}').observation?.text,7000);if(!text)return null;if(!text.includes('知衡｜策略观察'))return text;radarCatalog();const refs=all<{number:number}>('SELECT e.number FROM radar_event_refs e JOIN observation_signals s ON s.id=e.signal_id WHERE s.run_id=?',run.id).map(e=>'E-'+e.number);return text+'\n'+(refs.length?'事件 '+refs.join('、')+'；@知衡 并带编号发送“查看证据 / 查看全部对象”；私聊可带编号分析。':'查看依据：开发电脑上的知衡 → 持续观察 → 检查记录。')+'\n运行诊断保存在本机，不提供无法访问的手机链接。';}
  const label=run.status==='succeeded'?'已完成':run.status==='partial'?'部分完成':'未完成';
  const lines=[`知衡 · ${item.kind==='weekly'?'每周回顾':'委托核实'}${label}`,`执行时间：${stamp(run.finished_at||item.created_at)}（北京时间）`];
  const title=run.task_id?one<{title:string}>('SELECT title FROM tasks WHERE id=?',run.task_id)?.title:run.topic_id?one<{title:string}>('SELECT title FROM topics WHERE id=?',run.topic_id)?.title:null;
@@ -103,8 +105,8 @@ export function notificationText(item:Receipt){
  lines.push('在运行知衡的 Mac 上查看完整依据。手机暂不能直接打开本机页面。');
  return lines.filter(Boolean).join('\n');
 }
-export function feishuPayload(text:string,secret:string,timestamp=Math.floor(Date.now()/1000).toString()){
- return {msg_type:'text',content:{text},...(secret?{timestamp,sign:createHmac('sha256',timestamp+'\n'+secret).update('').digest('base64')}:{})};
+export function feishuPayload(text:string,secret:string,timestamp=Math.floor(Date.now()/1000).toString(),card=false){
+ return {...(card?{msg_type:'interactive',card:strategyCard(text)}:{msg_type:'text',content:{text}}),...(secret?{timestamp,sign:createHmac('sha256',timestamp+'\n'+secret).update('').digest('base64')}:{})};
 }
 export async function deliverNotification(send:typeof fetch=fetch){
  // An interrupted/ambiguous POST is not safe to retry automatically.
@@ -124,7 +126,7 @@ export async function deliverNotification(send:typeof fetch=fetch){
   // Never allow generated text to leak a saved secret or mention a group member.
   let text=body.replace(/https:\/\/open\.feishu\.cn\/open-apis\/bot\/v2\/hook\/[^\s]+/g,'[私密连接已隐藏]').replace(/[<>]/g,'');
   for(const value of [c.webhook,c.secret])if(value)text=text.split(value).join('[已隐藏]');
-  const response=await send(c.webhook,{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify(feishuPayload(text,c.secret)),redirect:'error',signal:AbortSignal.timeout(10000)});
+  const response=await send(c.webhook,{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify(feishuPayload(text,c.secret,undefined,item.kind==='observation'&&text.includes('知衡｜策略观察'))),redirect:'error',signal:AbortSignal.timeout(10000)});
   if(!response.ok){finish(response.status>=500?'unknown':'failed',`飞书 HTTP ${response.status}；请检查机器人配置后手动处理，未自动重发`);return;}
   const result=await response.json();
   const code=typeof result.code==='number'?result.code:typeof result.StatusCode==='number'?result.StatusCode:null;

@@ -1,0 +1,9 @@
+import {themeSchema} from '../../server/observation/theme-types';
+import type {Frame,DataPoint} from '../../server/observation/types';
+import {previousSessions} from '../../server/observation/calendar';
+import seeds from '../../server/observation/theme-seeds.json';
+export function fixture(at='2026-11-13T02:00:00.000Z',rise=.01):Frame{
+ const ts=seeds.map(t=>themeSchema.parse(t)),dates=previousSessions(at.slice(0,10),30),members=[...new Map(ts.flatMap(t=>[...t.members,...t.benchmarks.filter(b=>b.symbol).map(b=>({symbol:b.symbol!,name:b.name}))]).map(m=>[m.symbol,m])).values()],points:Record<string,DataPoint>={};
+ for(const m of members){const index=m.symbol==='sh000300',bars=dates.map((date,i)=>{const close=100*(1+(index?0:rise))**i;return {date,close,high:close*1.001,low:close*.99,volume:100}}),prior=bars.at(-1)!.close;points[m.symbol]={symbol:m.symbol,name:m.name,kind:index?'index':'stock',source:'SYNTHETIC ISOLATED TEST',quoteUrl:'https://example.com/quote',historyUrl:'https://example.com/history',receivedAt:at,historyReceivedAt:at,quoteAt:at,tradeDate:at.slice(0,10),quotePriceBasis:'unadjusted',priceBasis:index?'none':'qfq',priceUnit:index?'index_points':'CNY',volumeUnit:'test-shares',volumeComparable:true,finalPrice:false,finalVolume:false,quote:{price:prior*(index?1:1.02),previousClose:prior,volume:100,open:prior},bars,issues:[]};}
+ return {id:'f'.repeat(64),provider:'SYNTHETIC',observedAt:at,calendarVersion:'SSE-SZSE-2026/2025-12-22',groups:ts.map(t=>({id:t.id,name:t.name,kind:'theme',source:t.members[0].sources[0].url,sourceDate:'2026-11-13',knownAt:t.effectiveAt,mappingVersion:'synthetic',fullMembers:t.members.map(m=>m.symbol),members:t.members.map(m=>({symbol:m.symbol,name:m.name}))})),points,issues:[],classificationVersion:'fixture-v1',coverage:{requestedGroups:3,loadedGroups:3,requestedSymbols:members.length,loadedSymbols:members.length,uncovered:['SYNTHETIC DO NOT NOTIFY']},synthetic:true,themeConfigs:ts};
+}

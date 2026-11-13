@@ -1,0 +1,17 @@
+/** Reproducible offline preview. No database, model, market feed or Feishu client imported. */
+import {mkdirSync,writeFileSync} from 'node:fs';
+import {chromium} from '@playwright/test';
+import {analyzeThemes} from '../server/observation/theme-engine';
+import {summaryText,evidenceText} from '../server/observation/strategy';
+import {observationConfigSchema} from '../server/observation/types';
+import {strategyCard} from '../server/feishu/strategy-card';
+import {r1Fixture,provenance} from '../tests/fixtures/radar-decision';
+const frame=r1Fixture(),config=observationConfigSchema.parse({observationMode:'theme_watch',themes:frame.themeConfigs!.map(t=>({id:t.id,version:t.version}))});
+const report=analyzeThemes(frame,config,[],true),text=summaryText(report,'固定样本，本地预览'),card=strategyCard(text);
+const escape=(s:string)=>s.replaceAll('&','&amp;').replaceAll('<','&lt;').replaceAll('>','&gt;').replaceAll('"','&quot;');
+const details=evidenceText(report,'鼎龙股份');mkdirSync('artifacts',{recursive:true});
+writeFileSync('artifacts/radar-decision-preview.html',`<!doctype html><html lang="zh-CN"><meta charset="utf-8"><meta name="viewport" content="width=device-width, initial-scale=1"><title>知衡策略观察｜隔离样本预览</title><style>body{font:16px/1.7 -apple-system,BlinkMacSystemFont,sans-serif;background:#f3f5f8;margin:0;color:#25332d}main{max-width:430px;margin:24px auto;padding:16px}article{background:white;border:1px solid #dce2e6;border-radius:16px;overflow:hidden}h1{font-size:20px;background:#e7efff;padding:16px;margin:0}.body{padding:0 20px 16px}p{margin:14px 0}aside{font-size:12px;color:#68756e;margin-bottom:16px}details{background:white;border-radius:12px;margin-top:16px;padding:12px}summary{cursor:pointer}pre{white-space:pre-wrap;overflow-wrap:anywhere;font:14px/1.7 -apple-system,sans-serif}footer{font-size:13px;color:#516557;border-top:1px solid #edf0ee;padding-top:12px}</style><main><aside>${escape(provenance)}。这是按同一原生卡片JSON绘制的本地预览，不是飞书客户端实测。</aside><article><h1>${escape(card.header.title.content)}</h1><div class="body">${card.elements.map(e=>`<p>${escape(e.text.content)}</p>`).join('')}<footer>查看证据 / 查看全部对象：群内回复并 @知衡<br>私聊分析：携带事件编号；诊断留在本机</footer></div></article><details><summary>查看证据：鼎龙股份（样本）</summary><pre>${escape(details)}</pre></details><details><summary>运行诊断</summary><pre>${escape(JSON.stringify({mode:report.mode,conditions:report.themes.flatMap(t=>t.stocks).find(s=>s.symbol==='sz300054')!.conditions},null,2))}</pre></details></main></html>`);
+writeFileSync('artifacts/radar-decision-card.json',JSON.stringify(card,null,2));
+writeFileSync('artifacts/radar-decision-sample.txt',provenance+'\n\n'+text+'\n\n'+details);
+const browser=await chromium.launch({headless:true,executablePath:'/Applications/Google Chrome.app/Contents/MacOS/Google Chrome'});
+try{const page=await browser.newPage({viewport:{width:390,height:844},deviceScaleFactor:1});await page.goto('file://'+process.cwd()+'/artifacts/radar-decision-preview.html');if(await page.evaluate(()=>document.documentElement.scrollWidth>innerWidth))throw Error('Mobile preview overflow');await page.screenshot({path:'artifacts/radar-decision-mobile.png',fullPage:true});await page.getByText('查看证据：鼎龙股份（样本）',{exact:true}).click();await page.screenshot({path:'artifacts/radar-decision-evidence.png',fullPage:true});console.log(JSON.stringify({preview:'artifacts/radar-decision-mobile.png',summaryCharacters:text.length,synthetic:true,realSend:false}));}finally{await browser.close();}

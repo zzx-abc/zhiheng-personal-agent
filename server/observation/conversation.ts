@@ -1,3 +1,4 @@
+import {summaryText,evidenceText} from './strategy';
 import {all,one,exec,id,now,transaction,revision,type RecordRow} from '../db';
 import {observationConfigSchema,industryUniverse} from './types';
 import {createObservation,observationSummary,observationTask,changeObservation,setObservationStatus,requestObservationCheck,observationDetail,replayObservation} from './service';
@@ -36,7 +37,7 @@ export function handleObservationConversation(record:RecordRow):{runId:string;ta
    const c=applyText(text);c.goal=text.slice(0,500);taskId=createObservation(c,record.id);reply=`已保存“A股主线机会雷达”草稿。分析周期 ${c.analysisWeeks.join('—')} 周，历史指标窗口 3/5/20 个交易日，${c.durationDays===null?'运行期限暂定持续，直到你停止':'启用后运行 '+c.durationDays+' 天'}；默认每 ${c.frequencyMinutes} 分钟在交易时段检查。范围是${c.observationMode==='theme_watch'?'指定主题的版本化核心与辅助股票':'中证800的10个行业成分抽样'}，不是整个A股；提醒先保留在应用内。打开“持续观察”可调整范围并启用，当前尚未后台监测。`;
   }else if(!task){reply=tasks.length?'有多个观察任务，请在“持续观察”选择要管理的任务，或在消息中附任务编号。':'目前没有观察任务。可以说“请创建A股主线机会雷达，持续帮我观察未来2—4周的主线机会”。';}
   else if(/^(请)?(?:帮我)?(?:暂停|停止|结束|恢复|启用|开启)/.test(text)){
-   const op=/暂停/.test(text)?'pause':/停止|结束/.test(text)?'end':/恢复/.test(text)?'resume':'activate';setObservationStatus(task.id,op);reply={pause:'已暂停这个观察任务，取消未完成检查；历史保留。',end:'已结束这个观察任务，历史证据仍可查看。',resume:'已恢复观察；运行到期时间不变。下一次先重建基线，不补发过期盘中提醒。',activate:'已启用观察。后台按交易时段执行，首次建立基线，不把已有强势方向包装成新机会。'}[op];
+   const op=/暂停/.test(text)?'pause':/停止|结束/.test(text)?'end':/恢复/.test(text)?'resume':'activate';setObservationStatus(task.id,op);reply={pause:'已暂停这个观察任务，取消未完成检查；历史保留。',end:'已结束这个观察任务，历史证据仍可查看。',resume:'已恢复观察；运行到期时间不变。主题观察保留原基线，不补发过期盘中提醒。',activate:'已启用观察。后台按交易时段执行，首次建立基线，不把已有强势方向包装成新机会。'}[op];
   }else if((/^(请)?(?:帮我)?(?:调整|改为|改成|排除|只关注|只观察|把|将)/.test(text)||/加入重点观察|设为重点/.test(text))){
    const c=applyText(text,task.config);changeObservation(task.id,c,record.id);reply=c.unresolved.length?'已保存调整草稿并停止自动执行，还需明确：'+c.unresolved.join('；'):'已保存新配置版本；下一次重新建立基线，不把配置变化当作行情变化。';
   }else if(/^(请)?(?:帮我)?(?:现在|立即|执行一次|检查一次)/.test(text)){requestObservationCheck(task.id);reply='已提交一次观察检查。可在“持续观察”查看实际数据、健康状态和结果；排队不代表已查完。';
@@ -44,7 +45,7 @@ export function handleObservationConversation(record:RecordRow):{runId:string;ta
    const detail=observationDetail(task.id),latest=detail.checks[0] as {detail:string;outcome:string;frame_id:string}|undefined;
    if(/四周|4周|回放|复盘/.test(text)){const end=now(),start=new Date(Date.parse(end)-28*86400000).toISOString(),replay=replayObservation(task.id,start,end);reply=`过去四周保存了 ${replay.history.length} 个可回放采集批次，包含 ${replay.history.reduce((n,x)=>n+x.signals.length,0)} 个检测事件。${replay.notice} 完整检查及提醒记录在“持续观察”的历史中查看。`;}
    else if(!latest)reply='任务已保存，但还没有执行记录；没有记录不等于市场没有机会。';
-   else if(task.config.observationMode==='theme_watch'&&JSON.parse(latest.detail||'{}').themeReport)reply=JSON.parse(latest.detail).themeReport.text;
+   else if(task.config.observationMode==='theme_watch'&&JSON.parse(latest.detail||'{}').themeReport){const data=JSON.parse(latest.detail),report=data.interpretation?.themeReport||data.themeReport;reply=/证据|详情|第?\d+页/.test(text)?evidenceText(report,text,Math.max(1,Number(text.match(/第?(\d+)页/)?.[1]||1))):summaryText(report,'已保存的历史检查')+'\n查看全部条件与诊断：持续观察 → 检查记录。';}
    else if(/为什么|哪些数据|哪些地方|无法验证|退潮|相比|变化|方向/.test(text)){
     const data=JSON.parse(latest.detail||'{}'),metrics=Array.isArray(data.metrics)?data.metrics:[],wanted=scopeNames(text),m=metrics.find((x:{id:string})=>wanted.includes(x.id))||(metrics.length===1?metrics[0]:null);
     if(!m)reply='请说明你指哪个已覆盖行业，我会对照当次指标和证据回答；多个方向不能合并成一个结论。';
