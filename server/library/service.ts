@@ -16,7 +16,7 @@ export function ingest(input:Input){
  const instruction=(input.instruction||'').trim();if(instruction.length>20000||input.text&&input.text.length>200000)throw Error('文字过长，请上传文件');if((input.files?.length||0)>5)throw Error('一次最多5个附件');
  const mode=input.intent||(input.collectionMode?'collect':intent(instruction));const retention=mode==='pending'?'pending':mode==='analyze'?'session':'library';
  const materials:{asset:Asset|null;url:string|null;title:string;kind:string}[]=[];
- for(const file of input.files||[])materials.push({asset:storeAsset(file.bytes,file.mime),url:null,title:file.name.slice(0,200),kind:file.mime==='application/pdf'?'report':'material'});
+ for(const file of input.files||[]){const asset=storeAsset(file.bytes,file.mime);materials.push({asset,url:null,title:file.name.slice(0,200),kind:asset.mime==='application/pdf'?'report':'material'});}
  if(input.url){new URL(input.url);materials.push({asset:null,url:input.url.slice(0,4000),title:input.url.slice(0,200),kind:'article'});}
  if(input.text?.trim())materials.push({asset:storeAsset(Buffer.from(input.text),'text/plain'),url:null,title:input.text.trim().slice(0,80),kind:mode==='note'?'note':'article'});
  if(!materials.length)throw Error('请提供文字、链接或文件');
