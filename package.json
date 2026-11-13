@@ -1,6 +1,6 @@
 {
   "name": "zhiheng-personal-agent",
-  "version": "0.6.0",
+  "version": "0.7.0",
   "private": true,
   "scripts": {
     "dev": "node scripts/launch.mjs dev",
@@ -12,13 +12,15 @@
     "backup": "tsx scripts/backup.ts",
     "harness:check": "node runtime/dsh/adapter-smoke.mjs && node --test runtime/dsh/*.test.mjs",
     "test:ui": "node scripts/functional-smoke.mjs",
-    "memory:setup": "node scripts/setup-memory.mjs"
+    "memory:setup": "node scripts/setup-memory.mjs",
+    "radar:check": "tsx scripts/check-observation.ts"
   },
   "dependencies": {
     "@huggingface/transformers": "^4.3.2",
     "next": "16.4.5",
     "react": "19.3.1",
     "react-dom": "19.3.1",
+    "xlsx": "https://cdn.sheetjs.com/xlsx-0.20.3/xlsx-0.20.3.tgz",
     "zod": "4.6.7"
   },
   "devDependencies": {

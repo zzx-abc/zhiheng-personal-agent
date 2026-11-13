@@ -1,4 +1,5 @@
 import {setWeeklyEnabled,requestWeeklyReview,retryWeeklyReview,correctWeeklyReview,deleteWeeklyReview} from '../../../server/weekly-review';
+import {handleObservationConversation} from '../../../server/observation/conversation';
 import {saveNotifications,disconnectNotifications,requestNotificationTest,retryNotification} from '../../../server/notifications';
 import {correctTag,applyLinkFeedback} from '../../../server/memory-learning';
 import { NextRequest,NextResponse } from 'next/server';
@@ -54,7 +55,8 @@ export async function POST(req:NextRequest){try{guard(req);
  const recordId=capture(text.trim()||'请解释这张图片，并指出关键依据与未知信息。',replyTo,mode==='note'?'note':'message');
  mkdirSync(path.join(dataDir,'attachments'),{recursive:true,mode:0o700});
  for(const p of prepared){const key=id();const filePath=path.join(dataDir,'attachments',key);writeFileSync(filePath,p.buffer,{mode:0o600});exec('INSERT INTO attachments VALUES(?,?,?,?,?,?)',key,recordId,p.file.name.slice(0,200),p.mime,p.buffer.length,filePath);}
- const runId=mode==='note'?null:enqueue(recordId,mode);return NextResponse.json({recordId,runId});
+ const observation=mode==='auto'&&!prepared.length?handleObservationConversation(one<any>('SELECT * FROM records WHERE id=?',recordId)!):null;
+ const runId=mode==='note'?null:observation?.runId||enqueue(recordId,mode);return NextResponse.json({recordId,runId,observationTaskId:observation?.taskId});
  }
  const a=actions.parse(await req.json());let result:unknown={ok:true};
  switch(a.action){
@@ -79,7 +81,7 @@ export async function POST(req:NextRequest){try{guard(req);
  case 'run_task':result={runId:runTask(a.id)};break;
  case 'task_status':pauseTask(a.id,a.status);break;
  case 'cancel':cancel(a.id);break;
- case 'retry':{const r=one<Run>('SELECT * FROM runs WHERE id=?',a.id);if(!r||r.mode==='weekly'||['queued','running'].includes(r.status))throw Error('当前执行不可重试');result={runId:r.task_id?runTask(r.task_id):enqueue(r.record_id,a.mode||r.mode)};break;}
+ case 'retry':{const r=one<Run>('SELECT * FROM runs WHERE id=?',a.id);if(!r||['weekly','observation'].includes(r.mode)||['queued','running'].includes(r.status))throw Error('当前执行不可重试');result={runId:r.task_id?runTask(r.task_id):enqueue(r.record_id,a.mode||r.mode)};break;}
  case 'memory':result={id:addMemory(a.content,a.kind,a.topicId)};break;
  case 'correct':correctMemory(a.id,a.content);break;
  case 'memory_status':transaction(()=>{const m=one<{topic_id:string|null}>('SELECT topic_id FROM memories WHERE id=?',a.id);if(!m)throw Error('记忆不存在');exec('UPDATE memories SET status=?,updated_at=? WHERE id=?',a.status,now(),a.id);bump();invalidateGenerated(m.topic_id);});break;

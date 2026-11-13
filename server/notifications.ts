@@ -48,9 +48,14 @@ export function requestNotificationTest(){
   const key=id(),at=now();exec("INSERT INTO notification_outbox VALUES(?,NULL,'test','queued',?,?,?,NULL)",key,settings().generation,at,at);return key;
  });
 }
-function eligible(run:Run){return !!run.task_id||run.mode==='weekly'||run.mode==='check'||!!one("SELECT id FROM events WHERE run_id=? AND type='continuation_requested'",run.id);}
+function eligible(run:Run){if(run.mode==='observation'){try{return JSON.parse(run.result||'{}').observation?.notify===true;}catch{return false;}}return !!run.task_id||run.mode==='weekly'||run.mode==='check'||!!one("SELECT id FROM events WHERE run_id=? AND type='continuation_requested'",run.id);}
 function current(run:Run){
  if(!['succeeded','partial','failed','blocked'].includes(run.status))return false;
+ if(run.mode==='observation'){
+  const result=JSON.parse(run.result||'{}').observation;
+  const task=one<{config_version:number;epoch:number;ends_at:string|null}>('SELECT config_version,epoch,ends_at FROM observation_tasks WHERE task_id=?',run.task_id);
+  if(!result||!task||task.config_version!==result.taskVersion||task.epoch!==result.epoch||result.expiresAt<=now()||task.ends_at&&task.ends_at<=now())return false;
+ }
  if(run.topic_id&&one<{status:string}>('SELECT status FROM topics WHERE id=?',run.topic_id)?.status!=='active')return false;
  if(run.task_id){const task=one<{status:string;last_run_id:string|null}>('SELECT status,last_run_id FROM tasks WHERE id=?',run.task_id);if(task?.status!=='active'||(task.last_run_id&&task.last_run_id!==run.id))return false;}
  // An older weekly version must not be delivered after a newer retry exists.
@@ -61,7 +66,7 @@ export function collectNotifications(){
  const s=settings();if(!s.enabled||!s.enabled_at)return;
  transaction(()=>{
   const runs=all<Run>(`SELECT * FROM runs WHERE status IN ('succeeded','partial','failed','blocked') AND (task_id IS NOT NULL OR mode IN ('weekly','check') OR EXISTS (SELECT 1 FROM events e WHERE e.run_id=runs.id AND e.type='continuation_requested')) AND COALESCE(finished_at,created_at)>=? AND NOT EXISTS (SELECT 1 FROM notification_outbox n WHERE n.run_id=runs.id) ORDER BY COALESCE(finished_at,created_at)`,s.enabled_at);
-  for(const r of runs){if(!eligible(r)||!current(r))continue;const at=now();exec('INSERT OR IGNORE INTO notification_outbox VALUES(?,?,?,?,?,?,?,NULL)',id(),r.id,r.mode==='weekly'?'weekly':'task','queued',s.generation,at,at);}
+  for(const r of runs){if(!eligible(r)||!current(r))continue;const at=now();exec('INSERT OR IGNORE INTO notification_outbox VALUES(?,?,?,?,?,?,?,NULL)',id(),r.id,r.mode==='weekly'?'weekly':r.mode==='observation'?'observation':'task','queued',s.generation,at,at);}
  });
 }
 const clip=(x:unknown,n=400)=>typeof x==='string'?x.slice(0,n):'';
@@ -69,6 +74,7 @@ const stamp=(at:string)=>new Date(at).toLocaleString('zh-CN',{timeZone:'Asia/Sha
 export function notificationText(item:Receipt){
  if(item.kind==='test')return '知衡 · 飞书连接测试\n这是一条测试通知，不是投资分析。\n之后可接收每周回顾与委托核实任务的结果。自动通知是否开启，以知衡设置为准。';
  const run=one<Run&{finished_at:string}>('SELECT * FROM runs WHERE id=?',item.run_id);if(!run||!eligible(run)||!current(run))return null;
+ if(run.mode==='observation')return clip(JSON.parse(run.result||'{}').observation?.text,7000)||null;
  const label=run.status==='succeeded'?'已完成':run.status==='partial'?'部分完成':'未完成';
  const lines=[`知衡 · ${item.kind==='weekly'?'每周回顾':'委托核实'}${label}`,`执行时间：${stamp(run.finished_at||item.created_at)}（北京时间）`];
  const title=run.task_id?one<{title:string}>('SELECT title FROM tasks WHERE id=?',run.task_id)?.title:run.topic_id?one<{title:string}>('SELECT title FROM topics WHERE id=?',run.topic_id)?.title:null;
@@ -101,6 +107,7 @@ export async function deliverNotification(send:typeof fetch=fetch){
  const item=transaction(()=>{const r=one<Receipt>("SELECT * FROM notification_outbox WHERE status='queued' ORDER BY created_at,rowid LIMIT 1");if(!r)return null;exec("UPDATE notification_outbox SET status='sending',updated_at=? WHERE id=?",now(),r.id);return r;});if(!item)return;
  const finish=(status:string,error:string|null=null)=>exec('UPDATE notification_outbox SET status=?,error=?,updated_at=? WHERE id=?',status,error,now(),item.id);
  try{
+  if(process.env.AGENT_TEST_MODE==='1'&&send===fetch){finish('cancelled','隔离测试禁止向外部通知渠道发送');return;}
   const s=settings(),c=credentials();
   if(!c.webhook||c.generation!==s.generation||s.generation!==item.generation||(!s.enabled&&item.kind!=='test')){finish('cancelled','通知已关闭、连接已变更或配置待重新保存');return;}
   const body=notificationText(item);if(!body){finish('cancelled','来源已删除、纠正、暂停或被新版本替代');return;}

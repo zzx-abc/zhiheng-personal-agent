@@ -16,6 +16,15 @@ async function verifyOfflineRecovery(page){
  await expect(page.getByLabel('说说你的想法')).toHaveValue('测试样例：断线时保留这段草稿');
  await page.getByLabel('说说你的想法').fill('');
 }
+async function verifyObservations(page){
+ await page.getByRole('button',{name:'回到今天',exact:true}).click();await page.getByLabel('说说你的想法').fill('请创建A股主线机会雷达，持续帮我观察A股未来2—4周可能形成的主线机会，有新变化再提醒。');await page.getByRole('button',{name:'发送',exact:true}).click();await expect(page.locator('.transcript')).toContainText('草稿');
+ await page.getByRole('button',{name:'回到今天',exact:true}).click();await page.getByRole('button',{name:/持续观察.*让市场观察/}).click();const panel=page.locator('.observation-panel');await expect(panel).toContainText('非全市场');await panel.locator('.observation-select').first().click();await expect(panel).toContainText('运行到期');await panel.getByRole('button',{name:'启用观察',exact:true}).click();await expect(panel.getByRole('button',{name:'暂停观察',exact:true})).toBeVisible();await panel.getByRole('button',{name:'现在检查一次',exact:true}).click();await expect(panel).toContainText('排队中');
+ await panel.getByRole('button',{name:'暂停观察',exact:true}).click();await expect(panel.getByRole('button',{name:'恢复观察',exact:true})).toBeVisible();await panel.getByRole('button',{name:'调整配置',exact:true}).click();await panel.getByLabel('运行期限（天；留空直到手动结束）',{exact:true}).fill('28');await panel.getByRole('button',{name:'保存观察配置',exact:true}).click();await expect(panel).toContainText('配置 v2');await panel.getByRole('button',{name:'恢复观察',exact:true}).click();
+ await page.setViewportSize({width:390,height:844});if(await page.evaluate(()=>document.documentElement.scrollWidth>innerWidth))throw Error('Observation mobile overflow');await page.screenshot({path:'artifacts/observation-mobile.png',fullPage:true});await page.setViewportSize({width:1440,height:1000});await page.screenshot({path:'artifacts/observation-desktop.png',fullPage:true});
+ await panel.getByRole('button',{name:'回放过去四周已采集的记录'}).click();await expect(panel).toContainText('不发送通知');await panel.getByRole('button',{name:'结束任务',exact:true}).click();await expect(panel.locator('.observation-detail')).toContainText('已结束');
+ const exported=await(await fetch(base+'/api/export')).json();if(!exported.observation_tasks.length||!exported.observation_configs.length)throw Error('Observation export missing');
+ await page.getByRole('button',{name:'关闭窗口',exact:true}).click();await page.reload();await page.getByRole('button',{name:/持续观察.*让市场观察/}).click();await expect(page.locator('.observation-select')).toContainText('已结束');await page.getByRole('button',{name:'关闭窗口',exact:true}).click();
+}
 async function verifyNotifications(page){
  await page.getByRole('button',{name:'连接与设置',exact:true}).click();
  const panel=page.locator('.notification-settings');await expect(panel).toContainText('飞书通知');
@@ -145,9 +154,9 @@ try{
  await api({action:'task',topicId:topic,title:'测试样例 · 检查公告',question:'测试样例：核实订单'});await page.getByRole('button',{name:/^跟进/}).click();await page.getByRole('button',{name:'立即检查'}).click();await expect(page.getByText('这一条已保存，尚未完成',{exact:true})).toBeVisible();
  await page.getByRole('button',{name:'连接与设置'}).click();await expect(page.getByRole('button',{name:'测试连接'})).toBeDisabled();await expect(page.getByRole('dialog')).toContainText('不是模型上下文窗口');await page.screenshot({path:'artifacts/redesign-settings.png',fullPage:true});await page.getByRole('button',{name:'关闭窗口'}).click();
  // Weekly UI uses explicitly labelled synthetic output, never a fake live model.
- await page.getByRole('button',{name:'回到今天',exact:true}).click();await page.locator('.weekly-entry').click();
+ await page.getByRole('button',{name:'回到今天',exact:true}).click();await page.locator('.weekly-entry').filter({hasText:'每周回顾'}).click();
  await page.getByLabel('每周一 09:00 自动回顾上周').check();await expect(page.getByRole('dialog')).toContainText('下一次：');
- await page.reload();await page.locator('.weekly-entry').click();await expect(page.getByLabel('每周一 09:00 自动回顾上周')).toBeChecked();
+ await page.reload();await page.locator('.weekly-entry').filter({hasText:'每周回顾'}).click();await expect(page.getByLabel('每周一 09:00 自动回顾上周')).toBeChecked();
  await page.getByLabel('每周一 09:00 自动回顾上周').uncheck();
  await page.getByRole('button',{name:'现在回顾最近 7 天',exact:true}).click();await expect(page.locator('.weekly-card')).toContainText('等待连接模型');
  const weekly=(await(await fetch(base+'/api/agent')).json()).weekly,w=weekly.reviews[0],wv=weekly.versions[0];
@@ -173,5 +182,5 @@ try{
  if(!(await(await fetch(base+'/api/agent')).json()).records.some(r=>r.id===first.id))throw Error('Deleting review deleted investment original');
  const exported=await(await fetch(base+'/api/export')).json();if(!exported.records.length||!exported.memory_cards||!exported.record_context?.length||!exported.record_tags?.length||!exported.link_feedback?.length||JSON.stringify(exported).includes('apiKey'))throw Error('Export failed');const security=await fetch(base+'/api/agent',{method:'POST',headers:{Origin:'https://evil.example','Content-Type':'application/json'},body:JSON.stringify({action:'topic',title:'not allowed'})});if(security.ok)throw Error('Cross-site mutation allowed');
  await page.getByRole('button',{name:'我的脉络',exact:true}).click();await page.getByRole('button',{name:'原文',exact:true}).click();await page.locator('.memory-card').first().click();await page.getByRole('button',{name:'删除关联原文与记忆'}).click();await page.getByRole('button',{name:'确认删除原文及记忆'}).click();
- await page.setViewportSize({width:390,height:844});if(await page.evaluate(()=>document.documentElement.scrollWidth>innerWidth))throw Error('Memory mobile overflow');await page.screenshot({path:'artifacts/redesign-memory-mobile.png',fullPage:true});await verifyContinuity(page);await verifyNotifications(page);if(errors.length)throw Error(errors.join('\n'));console.log('PASS weekly schedule, report sources/correction/versions/export/delete; complete redesign: capture, reopen, no-key failure, cards/search/timeline, source, correction, tasks, usage, export, deletion, security and mobile layout');
+ await page.setViewportSize({width:390,height:844});if(await page.evaluate(()=>document.documentElement.scrollWidth>innerWidth))throw Error('Memory mobile overflow');await page.screenshot({path:'artifacts/redesign-memory-mobile.png',fullPage:true});await verifyContinuity(page);await verifyNotifications(page);await verifyObservations(page);if(errors.length)throw Error(errors.join('\n'));console.log('PASS weekly schedule, report sources/correction/versions/export/delete; complete redesign: capture, reopen, no-key failure, cards/search/timeline, source, correction, tasks, usage, export, deletion, security and mobile layout');
 }finally{if(browser)await browser.close();server.kill('SIGTERM');await new Promise(r=>setTimeout(r,1000));if(server.exitCode===null)server.kill('SIGKILL');rmSync(data,{recursive:true,force:true})}
