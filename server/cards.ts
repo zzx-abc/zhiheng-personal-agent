@@ -24,7 +24,7 @@ export function syncCards(){
  }
  transaction(()=>{
   for(const r of all<RecordRow>("SELECT * FROM records WHERE role='user'")){
-   if(['relation_feedback','tag_feedback','weekly_feedback'].includes(r.kind))continue;
+   if(['relation_feedback','tag_feedback','weekly_feedback','action_request'].includes(r.kind))continue;
    ensureRuleTags(r);
    for(let i=0;i<r.content.length;i+=420){const body=r.content.slice(i,i+500);put({id:`raw:${r.id}:${i}`,topic_id:r.topic_id,kind:r.kind==='correction'?'correction':'record',title:r.content.replace(/\s+/g,' ').slice(0,32),body,origin:'original',status:withdrawnSources.has(r.id)?'historical':'original',source_ids:JSON.stringify([r.id]),created_at:r.created_at,parent_id:r.topic_id});}
   }

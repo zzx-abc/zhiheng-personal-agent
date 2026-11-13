@@ -41,7 +41,7 @@ export function stateSourceIds(state:WorkingState){return [...new Set([
 export function validateState(state:WorkingState,allowed:Set<string>){
  for(const item of [...Object.values(state.decision_frame||{}),state.logic_change?.before,state.logic_change?.after]){
   if(!item)continue;
-  const source=one<{content:string}>("SELECT content FROM records WHERE id=? AND role='user'",item.source_id);
+  const source=one<{content:string}>("SELECT content FROM records WHERE id=? AND role='user' AND kind!='action_request'",item.source_id);
   if(!allowed.has(item.source_id)||!source?.content.includes(item.quote))throw Error('个人决策背景必须逐字引用可用的用户原文');
  }
  const change=state.logic_change;
@@ -58,7 +58,7 @@ export function validateState(state:WorkingState,allowed:Set<string>){
  }
  if(state.thesis.owner==='user_hypothesis'&&!state.thesis.sources.length)throw Error('用户假设必须关联原始表达');
  for(const item of state.evidence)if(!item.sources.length)throw Error('证据不能只有模型的无来源判断');
- if(state.thesis.owner==='user_hypothesis'&&!state.thesis.sources.some(source=>one("SELECT id FROM records WHERE id=? AND role='user'",source)))throw Error('用户假设必须引用用户原文');
+ if(state.thesis.owner==='user_hypothesis'&&!state.thesis.sources.some(source=>one("SELECT id FROM records WHERE id=? AND role='user' AND kind!='action_request'",source)))throw Error('用户假设必须引用用户原文');
 }
 // Called in the same transaction as the answer, after revision/cancellation checks.
 export function saveState(run:Run,state:WorkingState,allowed:Set<string>){

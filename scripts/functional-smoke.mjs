@@ -16,6 +16,41 @@ async function verifyOfflineRecovery(page){
  await expect(page.getByLabel('说说你的想法')).toHaveValue('测试样例：断线时保留这段草稿');
  await page.getByLabel('说说你的想法').fill('');
 }
+async function verifyContinuity(page){
+ const topic=(await api({action:'topic',title:'测试样例 · 换仓前核对依据',question:'测试样例：订单假设是否有新证据？'})).id;
+ const db=new DatabaseSync(path.join(data,'agent.sqlite')),record=randomUUID(),run=randomUUID(),version=randomUUID(),at=new Date().toISOString();
+ const original='测试样例：我关注甲公司是因为订单可能改善，今天回落让我有点犹豫。';
+ db.prepare('INSERT INTO records VALUES(?,?,?,?,?,?,?)').run(record,topic,'user','message',original,at,null);
+ db.prepare('INSERT INTO record_context VALUES(?,?,?)').run(record,null,record);
+ db.prepare('INSERT INTO runs(id,record_id,topic_id,mode,status,revision,created_at) VALUES(?,?,?,?,?,?,?)').run(run,record,topic,'review','succeeded',0,at);
+ const work={thesis:{text:'测试样例：订单改善假设',owner:'user_hypothesis',sources:[record]},assessment:'测试样例：回落是这次的触发，订单假设还需要公开证据。',assumptions:[],evidence:[],change_conditions:[],open_questions:['测试样例：订单披露是否改善'],next_action:{kind:'official_search',question:'测试样例：核实甲公司的近期订单披露',reason:'测试样例：检查原来的依据'},change_summary:'测试样例：首次整理',decision_frame:{original_basis:{quote:'我关注甲公司是因为订单可能改善',source_id:record},evaluation_horizon:null,contemplated_change:null,change_trigger:null}};
+ db.prepare('INSERT INTO working_states VALUES(?,?,?,?,?,?,?)').run(version,topic,run,'current',JSON.stringify(work),at,null);db.close();
+ const task=(await api({action:'task',topicId:topic,title:'测试样例 · 后续核实',question:'测试样例：核实订单改善假设'})).id;
+ await page.getByRole('button',{name:'回到今天',exact:true}).click();await page.getByLabel('说说你的想法').fill('');await page.reload();
+ const focus=page.getByRole('article',{name:'测试样例 · 换仓前核对依据',exact:true});
+ await expect(focus).toBeVisible();await expect(focus).toContainText('尚未检查');
+ await focus.getByRole('button',{name:/你原来的依据/}).click();await expect(page.getByRole('dialog',{name:'原始依据'})).toContainText(original);await page.getByRole('button',{name:'关闭窗口'}).click();
+ await page.setViewportSize({width:1440,height:1100});await page.screenshot({path:'artifacts/continuity-home-desktop.png',fullPage:true});
+ await page.setViewportSize({width:390,height:844});await page.screenshot({path:'artifacts/continuity-home-mobile.png',fullPage:true});
+ await focus.getByRole('button',{name:'核实这一步',exact:true}).click();await expect(focus).toContainText('等待连接模型');
+ await page.reload();await expect(focus).toContainText('等待连接模型');
+ const queued=await(await fetch(base+'/api/agent')).json(),request=queued.records.find(r=>r.kind==='action_request'&&r.topic_id===topic);
+ if(request.parent_id!==record||request.fragment_id!==record)throw Error('Continuation lost original fragment');
+ await focus.getByRole('button',{name:'查看讨论',exact:true}).click();await expect(page.locator('.user-text').filter({hasText:original})).toBeVisible();await expect(page.getByText('你委托的检查',{exact:true})).toBeVisible();
+ await page.getByRole('button',{name:'回到今天',exact:true}).click();await focus.getByRole('button',{name:'理解不对',exact:true}).click();
+ await focus.getByLabel('这件事哪里理解错了？').fill('测试样例：这只是我的担心，不是交易规则。');await focus.getByRole('button',{name:'保存这次纠正',exact:true}).click();
+ await expect(focus).toContainText('理解已更新，待重新梳理');await expect(focus.locator('.focus-basis')).toHaveCount(0);
+ await page.getByLabel('说说你的想法').fill('测试样例：正在输入的独立新想法');await focus.getByRole('button',{name:'接着纠正后的理解'}).click();await expect(page.getByLabel('说说你的想法')).toHaveValue('测试样例：正在输入的独立新想法');
+ await page.getByLabel('说说你的想法').fill('');await page.reload();await expect(focus).toContainText('旧理解已停用');
+ const corrected=await(await fetch(base+'/api/agent')).json();if(corrected.tasks.find(t=>t.id===task).status!=='paused')throw Error('Correction left old delegated premise active');
+ if(corrected.runs.find(r=>r.record_id===request.id).status!=='cancelled')throw Error('Correction left old check runnable');
+ await focus.getByRole('button',{name:'先放一放'}).click();await page.locator('.more-focus>summary').filter({hasText:/已暂停/}).click();await expect(focus).toContainText('已暂停');
+ await focus.getByRole('button',{name:'恢复关注'}).click();await expect(focus).toContainText('理解已更新');
+ if((await(await fetch(base+'/api/agent')).json()).runs.some(r=>r.topic_id===topic&&r.status==='queued'))throw Error('Resume silently started paid work');
+ if(await page.evaluate(()=>document.documentElement.scrollWidth>innerWidth))throw Error('Continuity mobile overflow');
+ await page.screenshot({path:'artifacts/continuity-correction-mobile.png',fullPage:true});
+}
+
 try{
  for(let i=0;i<60;i++){try{if((await fetch(base+'/api/agent')).ok)break}catch{}await new Promise(r=>setTimeout(r,500));if(i===59)throw Error(log)}
  browser=await chromium.launch({executablePath:'/Applications/Google Chrome.app/Contents/MacOS/Google Chrome',headless:true});const page=await browser.newPage({viewport:{width:1440,height:1000}}),errors=[];page.on('pageerror',e=>errors.push(e.message));await page.goto(base);
@@ -123,5 +158,5 @@ try{
  if(!(await(await fetch(base+'/api/agent')).json()).records.some(r=>r.id===first.id))throw Error('Deleting review deleted investment original');
  const exported=await(await fetch(base+'/api/export')).json();if(!exported.records.length||!exported.memory_cards||!exported.record_context?.length||!exported.record_tags?.length||!exported.link_feedback?.length||JSON.stringify(exported).includes('apiKey'))throw Error('Export failed');const security=await fetch(base+'/api/agent',{method:'POST',headers:{Origin:'https://evil.example','Content-Type':'application/json'},body:JSON.stringify({action:'topic',title:'not allowed'})});if(security.ok)throw Error('Cross-site mutation allowed');
  await page.getByRole('button',{name:'我的脉络',exact:true}).click();await page.getByRole('button',{name:'原文',exact:true}).click();await page.locator('.memory-card').first().click();await page.getByRole('button',{name:'删除关联原文与记忆'}).click();await page.getByRole('button',{name:'确认删除原文及记忆'}).click();
- await page.setViewportSize({width:390,height:844});if(await page.evaluate(()=>document.documentElement.scrollWidth>innerWidth))throw Error('Memory mobile overflow');await page.screenshot({path:'artifacts/redesign-memory-mobile.png',fullPage:true});if(errors.length)throw Error(errors.join('\n'));console.log('PASS weekly schedule, report sources/correction/versions/export/delete; complete redesign: capture, reopen, no-key failure, cards/search/timeline, source, correction, tasks, usage, export, deletion, security and mobile layout');
+ await page.setViewportSize({width:390,height:844});if(await page.evaluate(()=>document.documentElement.scrollWidth>innerWidth))throw Error('Memory mobile overflow');await page.screenshot({path:'artifacts/redesign-memory-mobile.png',fullPage:true});await verifyContinuity(page);if(errors.length)throw Error(errors.join('\n'));console.log('PASS weekly schedule, report sources/correction/versions/export/delete; complete redesign: capture, reopen, no-key failure, cards/search/timeline, source, correction, tasks, usage, export, deletion, security and mobile layout');
 }finally{if(browser)await browser.close();server.kill('SIGTERM');await new Promise(r=>setTimeout(r,1000));if(server.exitCode===null)server.kill('SIGKILL');rmSync(data,{recursive:true,force:true})}

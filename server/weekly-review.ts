@@ -95,7 +95,7 @@ export function tickWeekly(at=new Date()){
 }
 
 type Source=WeeklySource;
-const eligible="role='user' AND kind NOT IN ('relation_feedback','tag_feedback','weekly_feedback','check')";
+const eligible="role='user' AND kind NOT IN ('relation_feedback','tag_feedback','weekly_feedback','check','action_request')";
 export async function weeklyContext(review:WeeklyReview){
  const rows=all<RecordRow>(`SELECT * FROM records WHERE ${eligible} AND created_at>=? AND created_at<? ORDER BY created_at,id`,review.period_start,review.period_end);
  // Balance discussions; preserve their beginnings and latest qualifications.

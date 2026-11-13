@@ -5,7 +5,7 @@ import { z } from 'zod';
 import { mkdirSync,writeFileSync } from 'node:fs';
 import path from 'node:path';
 import { guard } from '../../../server/security';
-import { snapshot,createTopic,addRecord,capture,enqueue,createTask,runTask,cancel,pauseTask,addMemory,correctMemory,deleteRecord,searchHistory,invalidateGenerated } from '../../../server/store';
+import { snapshot,continueState,correctState,setTopicStatus,createTopic,addRecord,capture,enqueue,createTask,runTask,cancel,pauseTask,addMemory,correctMemory,deleteRecord,searchHistory,invalidateGenerated } from '../../../server/store';
 import { dataDir,all,one,exec,id,now,bump,transaction,type Run } from '../../../server/db';
 import { saveConfig } from '../../../server/config';
 import {syncCards,type MemoryCard} from '../../../server/cards';
@@ -14,6 +14,8 @@ export const dynamic='force-dynamic';
 function failure(e:unknown){return NextResponse.json({error:e instanceof Error?e.message:'请求失败'},{status:400});}
 export async function GET(req:NextRequest){try{guard(req);const query=req.nextUrl.searchParams.get('q');return NextResponse.json(query?{results:searchHistory(query,req.nextUrl.searchParams.get('topic'))}:snapshot(),{headers:{'Cache-Control':'no-store'}});}catch(e){return failure(e);}}
 const actions=z.discriminatedUnion('action',[
+ z.object({action:z.literal('continue_state'),id:z.string().uuid()}),
+ z.object({action:z.literal('correct_state'),id:z.string().uuid(),content:z.string().trim().min(1).max(1000)}),
  z.object({action:z.literal('weekly_settings'),enabled:z.boolean()}),
  z.object({action:z.literal('weekly_generate')}),
  z.object({action:z.literal('weekly_retry'),id:z.string().uuid()}),
@@ -61,7 +63,9 @@ export async function POST(req:NextRequest){try{guard(req);
  case 'correct_card':transaction(()=>{const card=one<MemoryCard>('SELECT * FROM memory_cards WHERE id=?',a.id);if(!card)throw Error('记忆卡片已不存在');const source=addRecord(a.content,card.topic_id,'correction');const at=now();exec('INSERT INTO memories VALUES(?,?,?,?,?,?,?,?,?,?)',id(),card.topic_id,'correction',a.content,'active',source,a.content,at,at,null);if(card.id.startsWith('memory:'))exec("UPDATE memories SET status='withdrawn',updated_at=? WHERE id=?",at,card.id.slice(7));bump();invalidateGenerated(card.topic_id);});syncCards();break;
  case 'topic':result={id:createTopic(a.title,a.question)};break;
  case 'topic_edit':transaction(()=>{if(!one('SELECT id FROM topics WHERE id=?',a.id))throw Error('关注不存在');exec('UPDATE topics SET title=?,question=?,updated_at=? WHERE id=?',a.title,a.question,now(),a.id);addRecord('纠正关注：'+a.title+'。'+a.question,a.id,'correction');bump();invalidateGenerated(a.id);});break;
- case 'topic_status':transaction(()=>{exec('UPDATE topics SET status=?,updated_at=? WHERE id=?',a.status,now(),a.id);if(a.status==='paused'){for(const t of all<{id:string}>('SELECT id FROM tasks WHERE topic_id=?',a.id))pauseTask(t.id,'paused');}bump();});break;
+ case 'topic_status':setTopicStatus(a.id,a.status);break;
+ case 'continue_state':result=continueState(a.id);break;
+ case 'correct_state':result=correctState(a.id,a.content);break;
  case 'task':result={id:createTask(a.topicId,a.title,a.question)};break;
  case 'run_task':result={runId:runTask(a.id)};break;
  case 'task_status':pauseTask(a.id,a.status);break;

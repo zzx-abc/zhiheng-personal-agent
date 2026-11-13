@@ -43,7 +43,7 @@ export function ruleTags(text:string):TagInput[]{
 }
 const canonical=(label:string)=>({订单改善:'订单兑现',订单质量:'订单兑现',换仓:'考虑调整',持有理由:'原始依据',关注理由:'原始依据'}[label]||label.trim());
 export function saveTags(record:RecordRow,inputs:TagInput[],origin:'model'|'rule'='model'){
- if(record.role!=='user'||['relation_feedback','tag_feedback','weekly_feedback'].includes(record.kind))return;
+ if(record.role!=='user'||['relation_feedback','tag_feedback','weekly_feedback','action_request'].includes(record.kind))return;
  for(const item of inputs.slice(0,10)){
   const parsed=tagSchema.safeParse(item);if(!parsed.success)continue;
   const t=parsed.data,label=t.kind==='entity'?t.label:canonical(t.label);
