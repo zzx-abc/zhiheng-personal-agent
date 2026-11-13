@@ -1,6 +1,6 @@
 {
   "name": "zhiheng-personal-agent",
-  "version": "0.11.0",
+  "version": "0.11.1",
   "private": true,
   "scripts": {
     "dev": "node scripts/launch.mjs dev",
@@ -16,7 +16,8 @@
     "radar:check": "tsx scripts/check-observation.ts",
     "records:check": "tsx scripts/library/check-live.ts",
     "radar:themes": "tsx scripts/check-theme-radar.ts",
-    "feishu:unified": "tsx --env-file-if-exists=.env.local scripts/feishu-unified.ts"
+    "feishu:unified": "tsx --env-file-if-exists=.env.local scripts/feishu-unified.ts",
+    "feishu:check-test": "tsx --env-file-if-exists=.env.local scripts/feishu-check-test.ts"
   },
   "dependencies": {
     "@huggingface/transformers": "^4.3.2",

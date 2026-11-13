@@ -1,3 +1,4 @@
+import {routeCheck} from './radar-checks';
 import {randomBytes} from 'node:crypto';
 import {z} from 'zod';
 import {one,all,exec,now,transaction,type Run} from '../db';
@@ -8,7 +9,7 @@ import {answerRecords} from '../library/answers';
 import {observationSummary,setObservationStatus} from '../observation/service';
 import {readPost} from './content';
 import {scopeFor,requireScope,profile,taskAllowed,eventBy,eventBySignal,mapped,candidates,previous,eventText,type Scope,type RadarEvent} from './unified-store';
-export type Routed={text:string;entryIds:string[];events?:string[];conversation?:boolean};
+export type Routed={text:string;entryIds:string[];events?:string[];checks?:string[];conversation?:boolean};
 const personal=/(我的|个人|之前保存|结合.{0,16}(资料|笔记|研报)|收藏|记下来|存下来|记录|暂停|停止)/;
 const save=/(记下来|存下来|收藏|保存|收录)/;
 function lookup(s:Scope,text:string,row:any){const explicit=[...text.matchAll(/\bE-(\d+)\b/gi)].map(x=>+x[1]);if(explicit.length)return [...new Set(explicit)].map(n=>eventBy(s,n)).filter((x):x is RadarEvent=>!!x);for(const parent of [row.parent,s.thread])if(parent){const result=mapped(s,parent);if(result.length)return result;}return [];}
@@ -18,6 +19,7 @@ export async function chat(run:Run,text:string,callOverride?:ModelCall):Promise<
 export async function routeUnified(run:Run,row:any,callOverride?:ModelCall):Promise<Routed|null>{const s=scopeFor(run.id);if(!s||!profile())return null;requireScope(s);const content=JSON.parse(row.content),post=row.type==='post'?readPost(content):null;let text=(post?post.text:row.type==='text'?String(content.text||''):'').replace(/@_user_\d+/g,'').trim();
  // Do not even call library target resolution before the scene decision.
  if(s.scene==='group'&&row.type!=='text'&&!(post&&!post.attachments.length&&!post.unsupported.length))return {text:'群里仅解释雷达信号；资料请发到知衡私聊。',entryIds:[]};
+ const checkReply=routeCheck(s,text,row);if(checkReply)return checkReply;
  let events=lookup(s,text,row);
  const hcode=text.match(/\bH-[A-F0-9]{12}\b/i)?.[0].toUpperCase();if(hcode){requireScope(s,true);const h=one<any>("SELECT * FROM feishu_handoffs WHERE code=? AND app=? AND tenant=? AND sender=? AND status='pending' AND expires_at>?",hcode,s.app,s.tenant,s.sender,now());if(!h)return {text:'交接不存在、已处理或已过期。请直接发送需要分析的事件编号。',entryIds:[]};const e=eventBySignal(s,h.signal_id);if(!e)return {text:'当前无法访问该事件。',entryIds:[]};events=[e];text='结合我的资料解释 E-'+e.number;/* Mark consumed only after a verifiable response below. */}
  if(s.scene==='group'){if(events.length!==1)return {text:choice(s),entryIds:[]};const e=events[0];if(personal.test(text))return {text:handoff(s,e),entryIds:[],events:[e.id]};const prior=/上次|变化|不同|比较/.test(text)?previous(s,e):null;return {text:eventText(e)+(/上次|变化|不同|比较/.test(text)?prior?'\n比较对象：同任务、对象、条件、阶段、规则版本和轮次的上一事件。\n'+eventText(prior):'\n没有找到同任务、对象、条件、阶段与规则版本的上一事件，不能拿其他主题代替。':''),entryIds:[],events:[e.id]};}
