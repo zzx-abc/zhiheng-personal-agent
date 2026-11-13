@@ -1,6 +1,6 @@
 import {all,one,exec,id,now,revision,transaction,type Run} from '../db';
 import {connection,authorized,connectionStatus} from './config';
-import {ingest,intent,entry,annotate,search,detail,deleteEntry,taskDraft,setRetention,chunks} from '../library/service';
+import {ingest,intent,entry,annotate,search,detail,deleteEntry,taskDraft,setRetention,chunks,retry} from '../library/service';
 import {recordCard,answerRecords} from '../library/answers';
 import {readPost,type Attachment} from './content';
 import {MAX_BYTES} from '../library/types';
@@ -26,6 +26,7 @@ export async function processFeishu(run:Run,transport:Transport){const row=one<a
   else{ids=await saveAttachments(post.attachments,text,row,c,transport);response=ids.map(recordCard).join('\n\n');}
  }
  else if(/^(补充|纠正|不是这个意思)/.test(text)){if(!target)response='请回复要修改的那条记录卡；当前无法唯一确定目标。';else{annotate(target,text.replace(/^(补充|纠正)[：:]?/,''),/^补充/.test(text)?'note':'correction');response='已保存你的原话并更新当前理解，旧关联和旧回答已失效。\n'+recordCard(target);}}
+ else if(/^(重试整理|继续整理|重新整理)$/.test(text.trim())){if(!target)response='请回复需要继续整理的那条资料卡，当前无法唯一确定目标。';else{retry(target);response='已安排继续整理，复用已完成片段，无需重新上传文件。\n'+recordCard(target);}}
  else if(/^确认删除\s/.test(text)){const match=text.match(/^确认删除\s+([\w-]+)\s+v(\d+)$/);if(!match||!target||match[1]!==target)response='请按删除确认消息中的编号和版本回复。';else{const result=deleteEntry(target,+match[2]);response='已删除本机记录及派生内容。'+(result.sharedAssetRetained?'原始文件仍被其他收藏引用，已保留。':'无其他引用的原始文件已清理。')+result.remoteNotice;ids=[];}}
  else if(/^删除/.test(text)){response=target?`将删除此记录、全部批注/版本/派生内容与索引；共享原文件有其他引用则保留。已发飞书消息和独立备份不在删除范围。请回复：确认删除 ${target} v${entry(target).version}`:'请回复要删除的那条记录卡，不能猜测删除对象。';}
  else if(/^(找回|搜索|检索|帮我找|我上次存)/.test(text)){const result=await search(text);ids=result.results.map(r=>r.id);response=result.results.length?result.results.map(r=>`${r.title}\n${r.reason}\n${r.excerpt}\n编号 ${r.id}`).join('\n\n'):'没有找到相关有效收藏；可以换一个原话、代码或日期。';}

@@ -1,6 +1,6 @@
 import {z} from 'zod';
 export const OWNER='local';
-export const TEMPLATE='source-extraction/1.1';
+export const TEMPLATE='source-extraction/2.0';
 export const MAX_BYTES=15*1024*1024;
 export const stanceSchema=z.enum(['unexpressed','interested','pending','partial_agree','agree','question','oppose']);
 export type Entry={id:string;owner:string;title:string;kind:string;retention:string;status:string;version:number;asset_id:string|null;original_url:string|null;final_url:string|null;fetched_at:string|null;metadata:string;purpose:string;created_at:string;updated_at:string;parse_state:string;extract_state:string;link_state:string;index_state:string;error:string|null};

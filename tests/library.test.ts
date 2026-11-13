@@ -5,7 +5,7 @@ import {tmpdir} from 'node:os';
 import path from 'node:path';
 process.env.AGENT_DATA_DIR=mkdtempSync(path.join(tmpdir(),'zhiheng-library-test-'));process.env.AGENT_TEST_MODE='1';
 const sql=await import('../server/db'),s=await import('../server/library/service'),p=await import('../server/library/processor'),a=await import('../server/library/assets'),parser=await import('../server/library/parse'),web=await import('../server/library/web'),n=await import('../server/notifications'),f=await import('../server/feishu/config'),receiver=await import('../server/feishu/receiver'),answers=await import('../server/library/answers'),conversation=await import('../server/library/conversation');
-const good=async(_system:string,prompt:string)=>{const c=JSON.parse(prompt);return {items:[{kind:'claim',text:'测试资料声称需求改善，尚未外部核验',object:'测试行业',period:'2026Q3',basis:'测试口径',origin:'source',citations:[{chunkId:c.chunkId,quote:c.text.slice(0,30)}]}]};};
+const good=async(_system:string,prompt:string)=>{const c=JSON.parse(prompt);return {items:[{kind:'claim',text:'测试资料声称需求改善，尚未外部核验',object:'测试行业',period:'2026Q3',basis:'测试口径',origin:'source',evidenceIds:[c.passages[0].id]}]};};
 const receive=(extra:any={})=>s.ingest({text:'虚构测试资料：2026Q3，测试行业需求改善。代码600001，收入120亿元；作者提示库存风险。',intent:'collect',eventKey:sql.id(),...extra});
 async function processEntry(key:string,call:any=good){const r=sql.one<any>('SELECT r.* FROM runs r JOIN library_jobs j ON j.run_id=r.id WHERE j.entry_id=? ORDER BY j.version DESC',key)!;sql.exec("UPDATE runs SET status='running',heartbeat=? WHERE id=?",sql.now(),r.id);await p.processLibrary({...r,status:'running'},call);return sql.one<any>('SELECT * FROM runs WHERE id=?',r.id)!;}
 beforeEach(()=>{for(const x of s.listEntries())s.deleteEntry(x.id,x.version);for(const retention of ['pending','session'])for(const x of s.listEntries(retention))s.deleteEntry(x.id,x.version);sql.exec('DELETE FROM notification_outbox');sql.exec('DELETE FROM feishu_replies');sql.exec('DELETE FROM feishu_inbox');sql.exec('DELETE FROM runs');});
@@ -71,4 +71,27 @@ test('post download rechecks application authorization before saving',async()=>{
 });
 test('text-only rich messages retain explicit note intent',async()=>{
  const run=await postMessage({title:'',content_v2:[[{tag:'md',text:'记一下：测试样例，我还没有认同这个观点。'}]]},{download:async()=>{assert.fail('no attachments')},reply:async()=>({code:0})});assert.equal(run.status,'succeeded');assert.equal(s.listEntries()[0].kind,'note');
+});
+
+test('evidence selections restore exact PDF whitespace and reject invented IDs without discarding valid items',async()=>{
+ const {passages,resolveSelection}=await import('../server/library/extraction');const chunk={id:'chunk',asset_id:'asset',ordinal:0,locator:'PDF物理页1',body:'测试需求\n改善的依据是收入 123.45 亿元。\n不同口径不得混用。'};const catalog=passages(chunk);assert.ok(catalog.length);const item={kind:'claim',text:'测试收入声明',object:null,period:null,basis:null,origin:'source',evidenceIds:[catalog[0].id]};
+ const checked=resolveSelection({items:[item,{...item,evidenceIds:['E999']},{...item,origin:'system'}]},chunk);assert.equal(checked.result.items.length,1);assert.equal(checked.issues.length,2);assert.ok(chunk.body.includes(checked.result.items[0].citations[0].quote));assert.match(checked.result.items[0].citations[0].quote,/123\.45/);p.validateExtraction(checked.result,[chunk]);
+});
+test('partial selection keeps good claims and retry only calls incomplete chunks',async()=>{
+ const key=receive({text:'测试需求改善，收入123.45亿元。'.repeat(350)}).entryIds[0];let count=0;
+ await processEntry(key,async(sys:string,prompt:string)=>{const result=await good(sys,prompt);count++;return count===1?{items:[...result.items,{...result.items[0],evidenceIds:['E999']}]}:result});
+ const d=s.detail(key),metadata=JSON.parse(s.entry(key).metadata);assert.equal(s.entry(key).extract_state,'partial');assert.ok(d.claims.length>0);assert.equal(metadata.issues[0].code,'citation_invalid');const before=count;
+ const retryRun=s.retry(key);assert.equal(s.retry(key),retryRun,'duplicate retry is idempotent');assert.ok(s.detail(key).claims.length>0,'valid claims remain visible during retry');
+ await processEntry(key,async(sys:string,prompt:string)=>{count++;return good(sys,prompt)});assert.equal(count-before,1);assert.equal(s.entry(key).extract_state,'ready');assert.equal(JSON.parse(s.entry(key).metadata).issues.length,0);
+});
+test('long documents continue after the first 12 chunks using caches',async()=>{
+ const key=receive({text:'测试样例需求仍需核实。'.repeat(5000)}).entryIds[0];let count=0;await processEntry(key,async(sys:string,prompt:string)=>{count++;return good(sys,prompt)});assert.equal(count,12);assert.equal(s.entry(key).extract_state,'partial');const total=(s.chunks(key) as any[]).length;assert.ok(total>12);
+ s.retry(key);await processEntry(key,async(sys:string,prompt:string)=>{count++;return good(sys,prompt)});assert.equal(count,total);assert.equal(s.entry(key).extract_state,'ready');
+});
+test('model errors have classified diagnostics and do not store raw provider secrets',async()=>{
+ const key=receive().entryIds[0];const run=await processEntry(key,async()=>{throw Error('DSH_DEADLINE_EXCEEDED secret-test-value')});const metadata=JSON.parse(s.entry(key).metadata);assert.equal(metadata.issues[0].code,'timeout');assert.match(s.entry(key).error!,/超时/);assert.ok(!JSON.stringify(metadata).includes('secret-test-value'));assert.equal(sql.all("SELECT * FROM events WHERE run_id=? AND type='library_extraction_error'",run.id).length,1);
+});
+test('Feishu retry uses the replied-to source without creating a duplicate material',async()=>{
+ const key=receive().entryIds[0];await processEntry(key,async()=>{throw Error('provider unavailable')});sql.exec('INSERT INTO feishu_replies VALUES(?,?,?,NULL,?)','om_retry','oc_allowed',JSON.stringify([key]),sql.now());
+ const run=await postMessage({content:[[{tag:'text',text:'重试整理'}]]},{download:async()=>{assert.fail('retry does not download')},reply:async()=>({code:0})},'om_retry');assert.equal(run.status,'succeeded');assert.equal(s.listEntries().length,1);assert.equal(s.entry(key).version,2);assert.equal(s.entry(key).extract_state,'pending');
 });

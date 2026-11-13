@@ -8,7 +8,7 @@
 - 一次真实Kimi提取及实际网页读取通过；真实PDF文字层和本地E5向量测试通过。详情见acceptance.md。
 
 ## 尚未验证与限制
-飞书缺少自建应用App ID/Secret与授权用户open_id，真实收件/附件下载/应用回复尚未连通。群Webhook不能代替收件应用。v0.10已补图片与扫描PDF本地OCR；复杂表格理解和全文分块语义向量未实现；每轮最多12片段，部分结果不会冒充完整。
+v0.10.2本机已通过自建应用的真实资料收件、附件下载、处理和发送回执验证；新部署仍须自行配置App ID/Secret与授权用户open_id，仓库不含凭据。群Webhook不能代替收件应用。v0.10已补图片与扫描PDF本地OCR；复杂表格理解和全文分块语义向量未实现；每轮最多12片段，部分结果不会冒充完整。
 
 ## 恢复
 阅读AGENTS.md、spec.md、plan.md、acceptance.md和implementation.md。npm test / npm run typecheck / npm run build / npm run test:ui。不得改模型预算，不提交私人资料或artifacts。后续任务为可配置多主题雷达，单独维护任务文档。

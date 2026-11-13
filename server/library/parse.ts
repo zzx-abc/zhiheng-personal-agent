@@ -51,7 +51,7 @@ export async function parseAsset(asset:Asset,url='',signal?:AbortSignal){
   }
   info.ocrEngine=OCR_ENGINE;info.ocrAttemptedPages=[...attempted];info.ocrRemainingPages=remaining.filter(n=>!attempted.has(n));
   if(pdf)info.unreadPages=unread;
-  info.notice='图片与扫描页使用本机OCR转写，文字不等于核实事实；数字、表格和图表含义需对照原件。PDF每轮最多识别10个缺文字页，已识别内容不会反复处理。'+(info.ocrError?' '+info.ocrError:'')+(info.ocrTruncatedPages?.length?' 部分页文字超过上限，转写不完整，请拆分或对照原件。':'');
+  info.notice=(pdf&&!info.ocrAttemptedPages.length&&!info.ocrRemainingPages.length?'已读取PDF文字层，未调用OCR；物理页码从1开始，表格与图表含义仍需对照原件。':'图片与扫描页使用本机OCR转写，文字不等于核实事实；数字、表格和图表含义需对照原件。PDF每轮最多识别10个缺文字页，已识别内容不会反复处理。')+(info.ocrError?' '+info.ocrError:'')+(info.ocrTruncatedPages?.length?' 部分页文字超过上限，转写不完整，请拆分或对照原件。':'');
   state=(info.unreadPages?.length||info.ocrRemainingPages.length||info.ocrError||info.ocrTruncatedPages?.length)?'partial':'ready';
   if(!existing.length&&!pieces.length)state='unsupported';
  }
