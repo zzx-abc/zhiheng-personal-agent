@@ -1,3 +1,4 @@
+import {wantsEvidence} from './evidence-brief';
 import {summaryText,evidenceText} from './strategy';
 import {all,one,exec,id,now,transaction,revision,type RecordRow} from '../db';
 import {observationConfigSchema,industryUniverse} from './types';
@@ -45,7 +46,7 @@ export function handleObservationConversation(record:RecordRow):{runId:string;ta
    const detail=observationDetail(task.id),latest=detail.checks[0] as {detail:string;outcome:string;frame_id:string}|undefined;
    if(/四周|4周|回放|复盘/.test(text)){const end=now(),start=new Date(Date.parse(end)-28*86400000).toISOString(),replay=replayObservation(task.id,start,end);reply=`过去四周保存了 ${replay.history.length} 个可回放采集批次，包含 ${replay.history.reduce((n,x)=>n+x.signals.length,0)} 个检测事件。${replay.notice} 完整检查及提醒记录在“持续观察”的历史中查看。`;}
    else if(!latest)reply='任务已保存，但还没有执行记录；没有记录不等于市场没有机会。';
-   else if(task.config.observationMode==='theme_watch'&&JSON.parse(latest.detail||'{}').themeReport){const data=JSON.parse(latest.detail),report=data.interpretation?.themeReport||data.themeReport;reply=/证据|详情|第?\d+页/.test(text)?evidenceText(report,text,Math.max(1,Number(text.match(/第?(\d+)页/)?.[1]||1))):summaryText(report,'已保存的历史检查')+'\n查看全部条件与诊断：持续观察 → 检查记录。';}
+   else if(task.config.observationMode==='theme_watch'&&JSON.parse(latest.detail||'{}').themeReport){const data=JSON.parse(latest.detail),report=data.interpretation?.themeReport||data.themeReport;reply=wantsEvidence(text)?evidenceText(report,text,Math.max(1,Number(text.match(/第?(\d+)页/)?.[1]||1))):summaryText(report,'已保存的历史检查')+'\n查看依据可回复股票名称和“查看证据”。';}
    else if(/为什么|哪些数据|哪些地方|无法验证|退潮|相比|变化|方向/.test(text)){
     const data=JSON.parse(latest.detail||'{}'),metrics=Array.isArray(data.metrics)?data.metrics:[],wanted=scopeNames(text),m=metrics.find((x:{id:string})=>wanted.includes(x.id))||(metrics.length===1?metrics[0]:null);
     if(!m)reply='请说明你指哪个已覆盖行业，我会对照当次指标和证据回答；多个方向不能合并成一个结论。';

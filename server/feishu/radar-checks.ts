@@ -1,3 +1,4 @@
+import {wantsEvidence} from '../observation/evidence-brief';
 import {interpretArchived} from '../observation/report-read';
 import {observationConfigSchema} from '../observation/types';
 import {summaryText,evidenceText,buildDecisions} from '../observation/strategy';
@@ -29,7 +30,8 @@ export function checkText(check:Check,detailed=false,question=''){
  if(/诊断/.test(question))return intro+'\n'+JSON.stringify({configVersion:check.config_version,epoch:check.epoch,outcome:check.outcome,provider:frame.provider,mode:report.mode,issues:frame.issues,coverage:frame.coverage},null,2);
  if(/全部对象/.test(question))return intro+'\n'+[...report.decision.risks,...report.decision.opportunities,...report.decision.others].map((x:any)=>`${x.theme}·${x.name}：${x.reasons.join('；')||'证据待补齐'}；${x.actions[0].label}`).join('\n');
  const page=Math.max(1,Number(question.match(/第?(\d+)页/)?.[1]||1));
- return intro+'\n'+(detailed?evidenceText(report,question,page):summaryText(report,'历史检查只读解读'))+'\n查看证据 / 查看全部对象 / 运行诊断：回复本条并发送对应文字；私聊可带 R-'+check.number+' 查阅。';
+ if(detailed)return `R-${check.number} · ${report.mode?.targetDate||stamp(report.observedAt).split(' ')[0]} 历史检查${frame.synthetic?'（合成测试数据）':''}\n`+evidenceText(report,question,page);
+ return intro+'\n'+summaryText(report,'历史检查只读解读')+'\n查看证据 / 查看全部对象 / 运行诊断：回复本条并发送对应文字；私聊可带 R-'+check.number+' 查阅。';
 }
 export function routeCheck(s:Scope,text:string,row:{parent?:string|null}){
  requireScope(s);const refs=[...text.matchAll(/\bR-(\d+)\b/gi)].map(m=>+m[1]);if(/\bE-\d+\b/i.test(text)){if(refs.length)return {text:'这次同时提到了信号与检查快照，请明确要解释哪个编号。',entryIds:[]};return null;}
@@ -47,7 +49,7 @@ export function routeCheck(s:Scope,text:string,row:{parent?:string|null}){
  if(checks.length!==1)return {text:'无法唯一确定可访问的检查快照，请回复对应消息或提供一个 R-编号。',entryIds:[]};
  const check=checks[0];
  if(/结合|我的|个人|收藏|记下来|保存|暂停/.test(text))return {text:s.scene==='group'?`个人资料不会在群里读取。请在私聊发送 R-${check.number} 查看这份历史检查；快照暂只支持事实查询，个人资料联合分析需使用真实触发事件的E编号。`:'这份R编号目前支持检查事实与同配置比较，尚未接入快照收藏或个人资料联合分析；没有执行这些操作。',entryIds:[],checks:[check.run_id]};
- let response=checkText(check,/证据|详情|条件|第?\d+页/.test(text),text);
+ let response=checkText(check,wantsEvidence(text),text);
  if(/上次|变化|不同|比较|对比/.test(text)){const prior=one<{run_id:string}>("SELECT c.run_id FROM observation_checks c JOIN runs r ON r.id=c.run_id WHERE c.task_id=? AND c.config_version=? AND c.epoch=? AND c.created_at<? AND c.frame_id IS NOT NULL AND r.status IN ('succeeded','partial') ORDER BY c.created_at DESC LIMIT 1",check.task_id,check.config_version,check.epoch,check.created_at);if(prior){const before=referenceCheck(s,prior.run_id);response+='\n对照同任务、同配置版本、同运行轮次的上次检查：\n'+checkText(before,false);}else response+='\n没有同任务、同配置版本和同轮次的上一份检查，不能把旧行业模式的结果当作本次主题检查的上次结果。';}
  return {text:response,entryIds:[],checks:[check.run_id]};
 }

@@ -52,7 +52,7 @@ test('new decision E reply stays scoped to that event, with on-demand evidence a
  const e=signal('sz300054','risk','盘后',{themeIds:['semiconductor-local']});d.exec('UPDATE observation_checks SET detail=? WHERE run_id=?',JSON.stringify({themeReport:report}),e.runId);
  const reply=await handle(message('解释 E-'+e.number,'group'),async()=>assert.fail('market decision uses no model'));
  assert.match(reply.value.text,/鼎龙股份/);assert.ok(!reply.value.text.includes('富瀚微'));assert.equal(d.all('SELECT * FROM library_run_sources').length,0);
- const detail=await handle(message('查看证据 E-'+e.number,'group'));assert.match(detail.value.text,/60.55/);assert.match(detail.value.text,/FAIL/);assert.match(detail.value.text,/https:\/\/example.com/);
+ const detail=await handle(message('查看证据 E-'+e.number,'group'));assert.match(detail.value.text,/60.55/);assert.match(detail.value.text,/领先 0.89/);assert.match(detail.value.text,/落后 1.39/);assert.match(detail.value.text,/收盘价/);assert.ok(detail.value.text.length<320);assert.doesNotMatch(detail.value.text,/FAIL|UNKNOWN|https?:/);const raw=await handle(message('原始证据 鼎龙股份 E-'+e.number,'group'));assert.match(raw.value.text,/FAIL/);assert.match(raw.value.text,/https:\/\/example.com/);
 });
 test('radar native-card payload keeps the existing signing envelope and ordinary text stays text',()=>{
  const card=n.feishuPayload('知衡｜策略观察\n隔离测试摘要','synthetic-secret','123',true);assert.equal(card.msg_type,'interactive');assert.ok('card' in card);assert.equal(card.timestamp,'123');assert.ok(card.sign);assert.equal(n.feishuPayload('普通通知','').msg_type,'text');

@@ -1,3 +1,4 @@
+import {briefEvidence,wantsRawEvidence} from './evidence-brief';
 import type {Theme,ThemeReport,StockView,Condition} from './theme-types';
 import {combine,conditionLabel,type Atom,type ConditionStatus} from './conditions';
 import {strategyDraft,type Strategy} from './strategy-schema';
@@ -75,6 +76,7 @@ export function summaryText(r:ThemeReport,nature='主动查询'){
  return lines.join('\n');
 }
 export function evidenceText(r:ThemeReport,question='',page=1){
+ if(!wantsRawEvidence(question))return briefEvidence(r,question,page);
  const matches=r.themes.filter(t=>question.includes(t.name)||t.stocks.some(s=>question.includes(s.name)||question.includes(s.symbol)||question.includes(s.symbol.slice(2))));
  const themes=matches.length?matches:r.themes,objects=themes.flatMap(t=>t.stocks.filter(s=>!matches.length||question.includes(t.name)||question.includes(s.name)||question.includes(s.symbol)||question.includes(s.symbol.slice(2))).map(s=>({t,s})));
  const selected=objects.slice(page-1,page),lines=[`策略与证据 · 第${page}/${Math.max(1,objects.length)}页；共${objects.length}个对象（含辅助与待核验）`,`采集 ${r.observedAt}；目标交易日 ${r.mode?.targetDate||'旧报告未记录'}；最后可用日 ${r.mode?.lastAvailableDate||'旧报告未记录'}`,`3日 ${r.window.start3}—${r.window.end}；5日 ${r.window.start5}—${r.window.end}；${r.window.basis}`];
@@ -82,5 +84,5 @@ export function evidenceText(r:ThemeReport,question='',page=1){
   for(const e of [...new Map(s.conditions.flatMap(c=>c.atoms?.flatMap(a=>a.evidence)||[]).map(e=>[e.source+e.availableAt,e])).values()])lines.push(`证据 ${e.source}；取得 ${e.availableAt||'未知'}；批次 ${e.frameId}`);
   const d=[...(r.decision?.risks||[]),...(r.decision?.opportunities||[]),...(r.decision?.others||[])].find(x=>x.key===t.id+'/'+s.symbol);if(d)for(const a of d.actions)lines.push(`${a.scenario}（假设）：${a.label}；${a.ruleVersion}；${a.validation}`,`下一确认：${a.next.join('；')}；失效：${a.invalidation.join('；')}；阻塞：${a.blockers.join('；')}`);
  }
- lines.push('查看后续对象：回复“查看证据 第2页”等；按股票名称可单独查阅。完整逐项证据和诊断也保存在本机持续观察。');return lines.join('\n');
+ lines.push('查看后续对象：回复“原始证据 第2页”等；按股票名称可单独查阅。完整逐项证据和诊断也保存在本机持续观察。');return lines.join('\n');
 }
