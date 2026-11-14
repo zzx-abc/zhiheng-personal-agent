@@ -191,3 +191,5 @@ v0.3.1 增加顶部常驻入口、对话内打开与 `/#weekly` 直达的浏览�
 ### v0.13.0 私聊目标执行
 
 运行 npm test、npm run typecheck、npm run build 和 npm run test:ui。真实模型验收另用 scripts/live-goal-research.ts --live；真实飞书收取与回复需单独核对，隔离路由不能代替平台回执。[分支对照与限制](docs/features/goal-driven-agent/README.md)
+
+v0.13.1 另测同一私聊近邻指代、主体白名单和历史原话工具。额外验证个人理由优先于重复行情查询，完整自动测试 278 项通过。

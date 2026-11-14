@@ -1,3 +1,4 @@
+import {filingQuestion,namedSubjects} from './subject';
 import {all,one} from '../db';
 import {terms,lexicalCards} from '../cards';
 import {chunks,entry,search} from '../library/service';
@@ -42,10 +43,29 @@ export async function readTool(tool:Tool,arg:string,scope:Scope,goal:string,step
   return {status:fragments.length?'ok':'partial',coverage:'当前版本选段；入库时间不代表披露日期。OCR数字仍需核对。'+(!fragments.length?'未取得正文。':''),data,retryable:false,entries:[{id:e.id,version:e.version}]};
  }
  if(tool==='past_question'){
-  const keys=[...new Set(lexicalCards(arg||goal).flatMap(c=>JSON.parse(c.source_ids) as string[]))];
-  const records=keys.map(key=>one<{id:string;content:string;created_at:string}>("SELECT * FROM records WHERE id=? AND role='user' AND NOT EXISTS(SELECT 1 FROM memories WHERE source_id=records.id AND status='withdrawn') AND kind NOT IN ('action_request','relation_feedback','weekly_feedback','tag_feedback')",key)).filter(x=>!!x).slice(0,3);
+  const subjects=namedSubjects(goal);
+  // Recall a person's reasoning before their requests to look up a price.
+  // These priorities select excerpts; they never turn a statement into a principle.
+  const pool=new Set(lexicalCards(arg||goal).flatMap(c=>JSON.parse(c.source_ids) as string[]));
+  for(const name of subjects){
+   for(const r of all<{id:string}>("SELECT id FROM records WHERE role='user' AND instr(content,?)>0 ORDER BY created_at DESC LIMIT 80",name))pool.add(r.id);
+  }
+  const allowed=(id:string)=>one<{id:string;content:string;created_at:string}>(`SELECT id,content,created_at FROM records
+   WHERE id=? AND role='user' AND kind NOT IN ('action_request','relation_feedback','weekly_feedback','tag_feedback')
+   AND NOT EXISTS(SELECT 1 FROM memories WHERE source_id=records.id AND status='withdrawn')`,id);
+  const candidates=[...pool].map(allowed).filter(r=>!!r);
+  const ranked=candidates.map(row=>{
+   const text=row.content;
+   const named=subjects.some(name=>text.includes(name));
+   const personal=/我(在|认为|觉得|当时|主要|关注|希望|想)|让我产生|原因是因为/.test(text);
+   const rationale=/因为|原因|依据|假设|逻辑|想法|验证|为什么/.test(text);
+   const request=/^(请核实|核实一下|查一下|帮我查)/.test(text);
+   const score=Number(named)*12+Number(personal)*8+Number(rationale)*4-Number(request)*12+Math.min(3,matches(text,arg));
+   return {row,score};
+  }).sort((a,b)=>b.score-a.score);
+  const records=ranked.slice(0,4).map(x=>x.row);
   if(!records.length)return empty('未定位到匹配的历史原话。');
-  return {status:'ok',coverage:'历史表达仅证明当时说过，需核对是否同一事项',data:records.map(r=>({ref:r.id,text:r.content.slice(0,700),kind:'个人原话',location:'历史想法',asOf:r.created_at})),records:records.map(r=>r.id),retryable:false};
+  return {status:'ok',coverage:'历史表达仅证明当时说过，需核对是否同一事项',data:records.map(r=>({ref:r.id,text:r.content.slice(0,1200),kind:'个人原话',location:'历史想法',asOf:r.created_at})),records:records.map(r=>r.id),retryable:false};
  }
  if(tool==='radar'){
   const refs=[...new Set(goal.toUpperCase().match(/\b[ER]-\d+\b/g)||[])];
@@ -67,10 +87,10 @@ export async function readTool(tool:Tool,arg:string,scope:Scope,goal:string,step
     text:[t.name,t.status,...t.stocks.slice(0,8).map(s=>s.name+'：'+(s.phase||'阶段未知')+'；'+(s.next||s.missing?.join('、')||'未给出后续条件')),t.missing?.join('、')].filter(Boolean).join('\n').slice(0,1300)}))};
  }
  // Only an observed company name leaves this device, with a fixed public metric.
- const names=steps.flatMap(s=>s.result.names||[]);
- if(!names.includes(arg)||!/^([\p{Script=Han}A-Za-z0-9＊*·-]){2,20}$/u.test(arg))return empty('补查只接受授权快照返回的单一公司名。','needs_authorization','NO_PUBLIC_SUBJECT');
+ const names=[...steps.flatMap(s=>s.result.names||[]),...namedSubjects(goal)];
+ if(!names.includes(arg)||!/^([\p{Script=Han}A-Za-z0-9＊*·-]){2,20}$/u.test(arg))return empty('补查只接受已核对名称的单一公司。','needs_authorization','NO_PUBLIC_SUBJECT');
  const end=new Date(),begin=new Date(end.getTime()-90*86400000);
- const response=await provider('/tools/search_pro',{text_query:arg+' 营业收入 定期报告',sites:['cninfo.com.cn','sse.com.cn','szse.cn','bse.cn'],time_window:{start:begin.toISOString().slice(0,10),end:end.toISOString().slice(0,10)},limit:3,timeout_seconds:20},signal);
+ const response=await provider('/tools/search_pro',{text_query:arg+(filingQuestion(goal)?' H股 发行 上市申请 公告':' 营业收入 定期报告'),sites:['cninfo.com.cn','sse.com.cn','szse.cn','bse.cn'],time_window:{start:begin.toISOString().slice(0,10),end:end.toISOString().slice(0,10)},limit:3,timeout_seconds:20},signal);
  if(!Array.isArray(response.search_results))return empty('公告查询返回格式异常。','unavailable','BAD_RESPONSE');
  const data:Source[]=[];
  for(const hit of response.search_results){

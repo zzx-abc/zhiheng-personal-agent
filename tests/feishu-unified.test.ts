@@ -134,3 +134,25 @@ test('goal denies arbitrary public queries, foreign group access and a per-run o
  await assert.rejects(()=>budget.reserveUsage(run.id,'synthetic',2,AbortSignal.timeout(1000)),/本次研究预算/);
  assert.ok(!d.one('SELECT id FROM usage WHERE run_id=?',run.id));
 });
+test('private memory follow-up resolves a public company from the actual prior inbound, then checks history',async()=>{
+ const first=accept(message('合成测试：江丰电子提交上市申请，这会有什么影响？'));
+ d.exec("UPDATE runs SET status='succeeded' WHERE id=?",first.id);
+ const result=await handle(message('与我记忆中关于它的研究会有关联影响吗'),async(_s:string,prompt:string)=>{
+  const p=JSON.parse(prompt);assert.ok(p.goal.includes('江丰电子'));assert.deepEqual(p.publicSubjects,['江丰电子']);
+  if(!p.steps.length)return {action:'past_question',arg:'江丰电子 研究',reason:'检索本人原先的问题'};
+  // Invalid outbound subject never reaches network (isolated test).
+  if(p.steps.length===1)return {action:'official',arg:'合成未知对象',reason:'验证主体限制'};
+  return {action:'finish',reason:'缺核实证据',answer:'未核实申请进度。',unknown:'缺对应公告',next:'取得可核对披露'};
+ });
+ assert.deepEqual(research.stepsFor(result.run.id).map(x=>x.tool),['past_question','official']);
+ assert.equal(research.stepsFor(result.run.id)[1].result.status,'needs_authorization');
+});
+test('memory with a named company recalls a personal rationale ahead of repeated quote requests',async()=>{
+ const s=u.scopeFor(accept(message('合成测试')).id)!;
+ const store=await import('../server/store'),cards=await import('../server/cards');
+ for(let i=0;i<4;i++)store.capture('请核实：江丰电子最新报价与同期走势 '+i,null);
+ const original='合成验收：我当时关注江丰电子，因为想看关键材料的替代需求能否转为收入。';
+ store.capture(original,null);cards.syncCards();
+ const x=await (await import('../server/goal-research/tools')).readTool('past_question','江丰电子 上市',s,'江丰电子上市申请影响我之前的研究吗？',[],[],AbortSignal.timeout(1000));
+ assert.equal(x.data[0].text,original);
+});
