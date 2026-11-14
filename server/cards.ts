@@ -1,3 +1,4 @@
+import {judgmentPassages} from './judgment-passages';
 import {ensureRuleTags,tagsFor} from './memory-learning';
 import {createHash} from 'node:crypto';
 import {db,all,one,exec,transaction,now,type RecordRow,type Memory} from './db';
@@ -26,6 +27,9 @@ export function syncCards(){
   for(const r of all<RecordRow>("SELECT * FROM records WHERE role='user'")){
    if(['relation_feedback','tag_feedback','weekly_feedback','action_request'].includes(r.kind))continue;
    ensureRuleTags(r);
+   if(['note','message'].includes(r.kind)&&!withdrawnSources.has(r.id)){
+    for(const [i,p] of judgmentPassages(r.content).entries())put({id:`reason:${r.id}:${i}`,topic_id:r.topic_id,kind:'decision_reason',title:p.dimensions.map(d=>d.label).join(' · '),body:p.quote,origin:'original',status:'original',source_ids:JSON.stringify([r.id]),created_at:r.created_at,parent_id:r.topic_id});
+   }
    for(let i=0;i<r.content.length;i+=420){const body=r.content.slice(i,i+500);put({id:`raw:${r.id}:${i}`,topic_id:r.topic_id,kind:r.kind==='correction'?'correction':'record',title:r.content.replace(/\s+/g,' ').slice(0,32),body,origin:'original',status:withdrawnSources.has(r.id)?'historical':'original',source_ids:JSON.stringify([r.id]),created_at:r.created_at,parent_id:r.topic_id});}
   }
   for(const m of all<Memory>('SELECT * FROM memories'))put({id:'memory:'+m.id,topic_id:m.topic_id,kind:m.kind,title:m.kind==='principle'?(m.status==='active'?'你认可的原则':'待认可的原则'):m.kind==='correction'?'修正后的理解':'个人背景',body:m.content,origin:m.status==='active'?'confirmed':'model',status:m.status==='withdrawn'?'withdrawn':m.status,source_ids:JSON.stringify([m.source_id]),created_at:m.updated_at,parent_id:m.topic_id});

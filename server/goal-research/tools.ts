@@ -1,3 +1,5 @@
+import {judgmentPassages} from '../judgment-passages';
+import {excludedPassages} from '../feishu/judgment-chat';
 import {filingQuestion,namedSubjects} from './subject';
 import {all,one} from '../db';
 import {terms,lexicalCards} from '../cards';
@@ -51,9 +53,19 @@ export async function readTool(tool:Tool,arg:string,scope:Scope,goal:string,step
    for(const r of all<{id:string}>("SELECT id FROM records WHERE role='user' AND instr(content,?)>0 ORDER BY created_at DESC LIMIT 80",name))pool.add(r.id);
   }
   const allowed=(id:string)=>one<{id:string;content:string;created_at:string}>(`SELECT id,content,created_at FROM records
-   WHERE id=? AND role='user' AND kind NOT IN ('action_request','relation_feedback','weekly_feedback','tag_feedback')
-   AND NOT EXISTS(SELECT 1 FROM memories WHERE source_id=records.id AND status='withdrawn')`,id);
-  const candidates=[...pool].map(allowed).filter(r=>!!r);
+   WHERE id=? AND role='user' AND kind NOT IN ('action_request','relation_feedback','weekly_feedback','tag_feedback','correction')
+   AND NOT EXISTS(SELECT 1 FROM judgment_turns j JOIN feishu_scopes h ON h.run_id=j.run_id WHERE j.record_id=records.id
+    AND (h.app<>? OR h.tenant<>? OR h.sender<>? OR h.generation<>?))
+   AND NOT EXISTS(SELECT 1 FROM memories WHERE source_id=records.id AND status='withdrawn')`,id,scope.app,scope.tenant,scope.sender,scope.generation);
+  const blocked=excludedPassages(scope);
+  const candidates=[...pool].map(allowed).filter(r=>!!r).flatMap(row=>{
+   const withdrawn=blocked.filter(b=>b.record_id===row.id);
+   if(!withdrawn.length)return [row];
+   const remaining=judgmentPassages(row.content)
+    .filter(p=>!withdrawn.some(b=>p.quote.includes(b.quote)))
+    .sort((a,b)=>matches(b.quote,arg)-matches(a.quote,arg));
+   return remaining.length?[{...row,content:remaining[0].quote}]:[];
+  });
   const ranked=candidates.map(row=>{
    const text=row.content;
    const named=subjects.some(name=>text.includes(name));

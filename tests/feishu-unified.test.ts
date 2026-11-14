@@ -156,3 +156,41 @@ test('memory with a named company recalls a personal rationale ahead of repeated
  const x=await (await import('../server/goal-research/tools')).readTool('past_question','江丰电子 上市',s,'江丰电子上市申请影响我之前的研究吗？',[],[],AbortSignal.timeout(1000));
  assert.equal(x.data[0].text,original);
 });
+
+test('independent DM stores separate reasons, recalls a specific passage across days and accepts scoped correction',async()=>{
+ const text='合成回放：我因为成交量放大开始观察青杉设备，后来我把资金换到松柏材料，因为我判断同行的订单会轮到它。';
+ const seed=await handle(message(text),async()=>({answer:'收到了。',index:null}));
+ assert.ok(d.one('SELECT id FROM records WHERE id=?',seed.run.id));
+ d.exec("UPDATE records SET created_at='2020-01-01T12:00:00Z' WHERE id=?",seed.run.id);
+ const ask='方向我还看好，可涨的都是别的票，我有点想换。';
+ const a=await handle(message(ask),async(_s:string,p:string)=>{
+  const c=JSON.parse(p).candidates.find((x:any)=>x.quote.includes('同行的订单'));
+  assert.ok(c);return {answer:'想换之前先说清预期会转向谁。',index:c.index,connection:'两次都在判断机会能否轮到具体标的。'};
+ });
+ assert.match(a.value.text,/2020-01-01/);assert.match(a.value.text,/同行的订单/);
+ const fix=await handle(message('那只是一次尝试，不是我的规则。'),async()=>assert.fail('correction should not call model'));
+ assert.match(fix.value.text,/已记下你的纠正/);
+ await handle(message(ask),async(_s:string,p:string)=>{assert.ok(!JSON.parse(p).candidates.some((x:any)=>x.quote.includes('同行的订单')));return {answer:'先比较当下依据。',index:null};});
+ assert.equal((await r.sendFeishu(a.run,'synthetic-stale',transport)).status,'cancelled');
+ const researchTool=await import('../server/goal-research/tools');
+ const scoped=await researchTool.readTool('past_question','青杉设备 成交量',u.scopeFor(a.run.id)!,'青杉设备最初关注依据',[],[],AbortSignal.timeout(1000));
+ const surviving=scoped.data.find(x=>x.ref===seed.run.id);
+ assert.match(surviving?.text||'',/成交量放大/);assert.doesNotMatch(surviving!.text,/同行的订单/);
+});
+test('explicit DM reply corrects the quoted thought when Feishu starts a new reply thread',async()=>{
+ const seed=await handle(message('我从放量开始观察合成新材料，后来换到别家，因为我判断机会会轮到设备。'),async()=>({answer:'收到。',index:null}));
+ const asked=await handle(message('我当初为什么关注合成新材料？'),async(_s:string,p:string)=>{
+  const c=JSON.parse(p).candidates.find((v:any)=>v.quote.includes('放量开始观察合成新材料'));assert.ok(c);
+  return {answer:'当时看放量。',index:c.index};
+ });
+ const scope=u.scopeFor(asked.run.id)!;
+ const fix=await handle(message('别把这两次关联。','p2p',{parent_id:scope.messageId,root_id:scope.messageId}),async()=>assert.fail('deterministic correction'));
+ assert.match(fix.value.text,/已记下你的纠正/);
+ assert.ok(d.one('SELECT 1 FROM judgment_corrections WHERE record_id=?',seed.run.id));
+});
+test('ordinary accounting question sees no unrelated personal history even in same DM',async()=>{
+ await handle(message('我当时开始观察合成公司是因为成交量放大。'),async()=>({answer:'合成回复',index:null}));
+ const x=await handle(message('合成公司公告里的会计口径怎么理解？'),async(_s:string,p:string)=>{
+  const data=JSON.parse(p);assert.ok(!data.candidates?.length);assert.ok(!p.includes('成交量放大'));return {answer:'先看会计期间。'};
+ });assert.ok(!x.value.text.includes('写过'));
+});
