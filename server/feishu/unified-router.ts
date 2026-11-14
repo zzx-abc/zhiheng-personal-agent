@@ -1,3 +1,4 @@
+import {routeResearch} from '../goal-research/route';
 import {wantsEvidence} from '../observation/evidence-brief';
 import {routeCheck} from './radar-checks';
 import {randomBytes} from 'node:crypto';
@@ -20,6 +21,7 @@ export async function chat(run:Run,text:string,callOverride?:ModelCall):Promise<
 export async function routeUnified(run:Run,row:any,callOverride?:ModelCall):Promise<Routed|null>{const s=scopeFor(run.id);if(!s||!profile())return null;requireScope(s);const content=JSON.parse(row.content),post=row.type==='post'?readPost(content):null;let text=(post?post.text:row.type==='text'?String(content.text||''):'').replace(/@_user_\d+/g,'').trim();
  // Do not even call library target resolution before the scene decision.
  if(s.scene==='group'&&row.type!=='text'&&!(post&&!post.attachments.length&&!post.unsupported.length))return {text:'群里仅解释雷达信号；资料请发到知衡私聊。',entryIds:[]};
+ if(s.scene==='p2p'&&(row.type==='text'||post&&!post.attachments.length&&!post.unsupported.length)){const result=await routeResearch(run,s,text,row.parent,callOverride);if(result)return result;}
  const checkReply=routeCheck(s,text,row);if(checkReply)return checkReply;
  let events=lookup(s,text,row);
  const hcode=text.match(/\bH-[A-F0-9]{12}\b/i)?.[0].toUpperCase();if(hcode){requireScope(s,true);const h=one<any>("SELECT * FROM feishu_handoffs WHERE code=? AND app=? AND tenant=? AND sender=? AND status='pending' AND expires_at>?",hcode,s.app,s.tenant,s.sender,now());if(!h)return {text:'交接不存在、已处理或已过期。请直接发送需要分析的事件编号。',entryIds:[]};const e=eventBySignal(s,h.signal_id);if(!e)return {text:'当前无法访问该事件。',entryIds:[]};events=[e];text='结合我的资料解释 E-'+e.number;/* Mark consumed only after a verifiable response below. */}

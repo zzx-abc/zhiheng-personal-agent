@@ -19,6 +19,8 @@ const lock=path.join(dataDir,'worker.lock');
 try{const fd=openSync(lock,'wx',0o600);writeFileSync(fd,String(process.pid));closeSync(fd);}catch{let alive=true;try{process.kill(Number(readFileSync(lock,'utf8')),0);}catch{alive=false;}if(alive)throw Error('已有后台正在运行，拒绝启动第二个发送者');unlinkSync(lock);const fd=openSync(lock,'wx',0o600);writeFileSync(fd,String(process.pid));closeSync(fd);}
 process.on('exit',()=>{try{if(readFileSync(lock,'utf8')===String(process.pid))unlinkSync(lock);}catch{}});
 reconcileLegacyReservations();recoverPendingUsage();beatWorker();
+// Exclusive worker lock held. Resume only journaled read-only research, prior to delivery.
+exec("UPDATE runs SET status='queued',phase='research_resume' WHERE mode='feishu_ingest' AND status='running' AND id IN (SELECT run_id FROM research_items)");
 let quitting=false;const lanes=new WorkerLanes();
 const pulse=setInterval(()=>beatWorker(),5000);pulse.unref();
 const stop=()=>{quitting=true;clearInterval(pulse);};process.on('SIGTERM',stop);process.on('SIGINT',stop);

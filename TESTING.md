@@ -187,3 +187,7 @@ v0.3.1 增加顶部常驻入口、对话内打开与 `/#weekly` 直达的浏览�
 ## v0.12.1 证据阅读
 
 270 项程序测试通过。群事件追问验证数值、方向、确认缺口和短答长度。显式请求原始证据可定位同一对象的明细与来源。另用本机已有群消息的父消息引用只读复核实际问句。
+
+### v0.13.0 私聊目标执行
+
+运行 npm test、npm run typecheck、npm run build 和 npm run test:ui。真实模型验收另用 scripts/live-goal-research.ts --live；真实飞书收取与回复需单独核对，隔离路由不能代替平台回执。[分支对照与限制](docs/features/goal-driven-agent/README.md)
