@@ -1,3 +1,4 @@
+import {tickPersonalWatches} from './personal-watch/service';
 import {syncFeishu,feishuTransport} from './feishu/runtime';
 import {processFeishu} from './feishu/receiver';
 import {processLibrary,recoverLibrary} from './library/processor';
@@ -30,6 +31,7 @@ async function loop(){while(!quitting){
  exec("UPDATE runs SET status='failed',phase='interrupted',error='后台执行中断，已保留原始输入；未自动重试。',finished_at=? WHERE status='running' AND heartbeat<?",now(),new Date(Date.now()-30000).toISOString());
  recoverPendingUsage();recoverLibrary();tickWeekly();tickObservations();
  lanes.launch('connection',syncFeishu);
+ lanes.launch('personal-watch',()=>tickPersonalWatches(feishuTransport.send!));
  lanes.launch('delivery',async()=>{collectNotifications();await deliverNotification();});
  for(const mode of dedicated)if(!lanes.busy(mode)){const run=claim([mode]);if(run)lanes.launch(mode,()=>execute(run));}
  if(!lanes.busy('general')){const run=claim(dedicated,true);if(run)lanes.launch('general',()=>execute(run));}
