@@ -1,3 +1,4 @@
+import {summaryText} from './strategy';
 import {interpretArchived} from './report-read';
 import './db';
 import {all,one,exec,id,now,transaction,revision,event,type Run} from '../db';
@@ -50,6 +51,14 @@ export function tickObservations(at=now()){
  // Reconcile a worker crash without replaying an old intraday check.
  for(const row of all<{run_id:string;task_id:string}>("SELECT c.run_id,c.task_id FROM observation_checks c JOIN runs r ON r.id=c.run_id WHERE c.outcome='queued' AND r.status IN ('failed','cancelled','stale')")){
   exec("UPDATE observation_checks SET outcome='failed',detail=? WHERE run_id=?",JSON.stringify({reason:'上次检查中断或已取消，未补发旧信号；下一有效时段重新检查'}),row.run_id);
+  const task=observationTask(row.task_id),run=one<Run>('SELECT * FROM runs WHERE id=?',row.run_id);
+  const check=one<{config_version:number;epoch:number}>('SELECT * FROM observation_checks WHERE run_id=?',row.run_id);
+  if(task&&run?.status==='failed'&&task.status==='active'&&periodic(task)&&process.env.AGENT_TEST_MODE!=='1'
+   &&check?.config_version===task.config_version&&check.epoch===task.epoch&&marketPhase(at)==='intraday'
+   &&Date.parse(at)-Date.parse(run.created_at)<task.config.frequencyMinutes*60000){
+   exec('UPDATE runs SET finished_at=?,result=? WHERE id=?',at,JSON.stringify({observation:{notify:true,taskVersion:task.config_version,epoch:task.epoch,
+    expiresAt:new Date(Date.parse(at)+5*60000).toISOString(),text:'知衡 · 定时检查中断\n本轮后台执行中断，未取得新结论。请保持运行电脑唤醒；下一轮继续检查。'}}),run.id);
+  }
  }
  for(const task of observationSummary().filter(t=>t.status==='active')){
   if(task.ends_at&&task.ends_at<=at){transaction(()=>{exec("UPDATE tasks SET status='expired',updated_at=? WHERE id=?",at,task.id);exec("UPDATE runs SET status='cancelled',error='观察已到期',finished_at=? WHERE task_id=? AND status IN ('queued','running')",at,task.id);exec('UPDATE observation_tasks SET next_at=NULL WHERE task_id=?',task.id);action(task.id,'expired',{endsAt:task.ends_at});});continue;}
@@ -60,6 +69,13 @@ export function tickObservations(at=now()){
  }
 }
 function alive(run:Run,task:ObservationTask){const current=observationTask(task.id),r=one<Run>('SELECT * FROM runs WHERE id=?',run.id);if(r?.status!=='running'||current?.status!=='active'||current.config_version!==task.config_version||current.epoch!==task.epoch||current.ends_at&&current.ends_at<=now())throw Error('观察已暂停、到期或配置已改变');}
+export function periodic(task:ObservationTask){return task.config.observationMode==='theme_watch'&&task.config.notification.cadence==='every_check'&&task.config.notification.channel==='feishu';}
+export function checkNotification(task:ObservationTask,report:ThemeReport,synthetic:boolean){
+ const regular=periodic(task),changed=report.events.some(e=>e.notify);
+ return {notify:!synthetic&&task.config.notification.channel==='feishu'&&(regular||changed),
+ text:regular?summaryText(report,'定时检查')+'\n检查时间 '+new Date(report.observedAt).toLocaleString('zh-CN',{timeZone:'Asia/Shanghai',hour12:false})+
+ (report.baseline?'\n本轮建立基线。':changed?'\n本轮有条件变化。':'\n本轮没有新增条件变化。'):themeNotification(report)};
+}
 function complete(run:Run,outcome:string,detail:unknown,result:unknown,status='succeeded'){exec('UPDATE observation_checks SET outcome=?,detail=? WHERE run_id=?',outcome,JSON.stringify(detail),run.id);exec("UPDATE runs SET status=?,phase='done',finished_at=?,result=? WHERE id=?",status,now(),JSON.stringify(result),run.id);}
 function message(task:ObservationTask,result:ReturnType<typeof detect>,frame:Frame){
  const signals=result.signals.filter(s=>s.notify).sort((a,b)=>Number(b.kind==='risk')-Number(a.kind==='risk')||Number(task.config.scope.focus.includes(b.groupId))-Number(task.config.scope.focus.includes(a.groupId))||(b.metric.relative3||0)-(a.metric.relative3||0)),lines=[`知衡 · ${task.title}`,`数据观察时间：${new Date(frame.observedAt).toLocaleString('zh-CN',{timeZone:'Asia/Shanghai',hour12:false})}（北京时间）`,`范围：${frame.groups.length} 个行业的成分抽样，本轮 ${result.validGroups} 组样本满足质量门槛；不是全A股扫描。`];
@@ -89,8 +105,8 @@ export async function processObservation(run:Run,provider=collectFrame,clock=()=
     for(const state of result.states)exec('INSERT OR REPLACE INTO observation_theme_states VALUES(?,?,?)',task.id,state.id,JSON.stringify(state));
     for(const signal of result.events){const dedupe=[task.id,task.config_version,task.epoch,frame.classificationVersion,signal.id].join(':');exec('INSERT OR IGNORE INTO observation_signals VALUES(?,?,?,?,?,?)',id(),task.id,run.id,dedupe,JSON.stringify(signal),at);}
     const partial=result.themes.some(t=>t.valid<t.configured),notices=result.events.filter(e=>e.notify);
-    complete(run,baseline?'baseline':notices.length?'new_signals':partial?'partial_coverage':'no_new_signal',{themeReport:result,coverage:frame.coverage,issues:frame.issues,frameId:frame.id},{observation:{notify:!frame.synthetic&&task.config.notification.channel==='feishu'&&notices.length>0,taskVersion:task.config_version,epoch:task.epoch,expiresAt:new Date(Date.parse(at)+task.config.frequencyMinutes*60000).toISOString(),text:themeNotification(result)}},partial?'partial':'succeeded');
-    exec('UPDATE observation_tasks SET baseline_key=?,last_success_at=?,failure_streak=?,health=? WHERE task_id=?',frame.classificationVersion,result.unique.valid?at:task.last_success_at,result.unique.valid?0:task.failure_streak+1,`${result.themes.length}个主题；${result.unique.valid}/${result.unique.configured}只有完整可比历史。`+(baseline?'当前体检已保存，建立基线不推送。':notices.length?`新增${notices.length}组变化。`:'没有新的提醒事件；缺失按对象显示。'),task.id);
+    complete(run,baseline?'baseline':notices.length?'new_signals':partial?'partial_coverage':'no_new_signal',{themeReport:result,coverage:frame.coverage,issues:frame.issues,frameId:frame.id},{observation:{...checkNotification(task,result,frame.synthetic),taskVersion:task.config_version,epoch:task.epoch,expiresAt:new Date(Date.parse(at)+task.config.frequencyMinutes*60000).toISOString()}},partial?'partial':'succeeded');
+    exec('UPDATE observation_tasks SET baseline_key=?,last_success_at=?,failure_streak=?,health=? WHERE task_id=?',frame.classificationVersion,result.unique.valid?at:task.last_success_at,result.unique.valid?0:task.failure_streak+1,`${result.themes.length}个主题；${result.unique.valid}/${result.unique.configured}只有完整可比历史。`+(baseline?(periodic(task)?'本轮发送基线体检。':'当前体检已保存，建立基线不推送。'):notices.length?`新增${notices.length}组变化。`:'没有新的提醒事件；缺失按对象显示。'),task.id);
    });return;
   }
   const previous=all<{state:string}>('SELECT state FROM observation_candidates WHERE task_id=?',task.id).map(r=>JSON.parse(r.state) as Candidate);
@@ -116,9 +132,10 @@ export async function processObservation(run:Run,provider=collectFrame,clock=()=
    const coverageNote=result.validGroups<frame.groups.length?`部分覆盖：${result.validGroups}/${frame.groups.length} 组通过质量门槛。`:'';
    exec('UPDATE observation_tasks SET baseline_key=?,last_success_at=?,failure_streak=0,health=? WHERE task_id=?',frame.classificationVersion,at,coverageNote+(baseline?'基线已建立，初始候选不外发':notices.length?'发现新的观察事件':'检查完成，没有新的提醒事件'),task.id);
   });
- }catch{const current=one<Run>('SELECT * FROM runs WHERE id=?',run.id);if(current?.status==='running')transaction(()=>{
-  const failures=task.failure_streak+1,at=clock().toISOString(),notify=task.config.notification.faults&&task.config.notification.channel==='feishu'&&process.env.AGENT_TEST_MODE!=='1'&&failures>=3&&(!task.fault_notified_at||Date.parse(at)-Date.parse(task.fault_notified_at)>24*3600000);
-  complete(run,'failed',{reason:'采集超时、配置变化或数据格式未通过校验；没有产生策略结论'},{observation:{notify,taskVersion:task.config_version,epoch:task.epoch,expiresAt:new Date(Date.parse(at)+3600000).toISOString(),text:'知衡 · 观察执行故障\n连续检查未完成，没有形成新的市场结论。任务未因未读而暂停；请在本机查看数据健康。'}},'failed');exec("UPDATE observation_tasks SET failure_streak=?,health='本轮执行失败；请查看检查记录',fault_notified_at=CASE WHEN ? THEN ? ELSE fault_notified_at END WHERE task_id=?",failures,notify?1:0,at,task.id);
+ }catch(error){const current=one<Run>('SELECT * FROM runs WHERE id=?',run.id);if(current?.status==='running')transaction(()=>{
+  const failures=task.failure_streak+1,at=clock().toISOString(),notify=process.env.AGENT_TEST_MODE!=='1'&&(periodic(task)||task.config.notification.faults&&task.config.notification.channel==='feishu'&&failures>=3&&(!task.fault_notified_at||Date.parse(at)-Date.parse(task.fault_notified_at)>24*3600000));
+  event(run.id,'observation_failure',{reason:error instanceof Error?error.message.slice(0,200):'采集未完成'});
+  complete(run,'failed',{reason:'采集超时、配置变化或数据格式未通过校验；没有产生策略结论'},{observation:{notify,taskVersion:task.config_version,epoch:task.epoch,expiresAt:new Date(Date.parse(at)+3600000).toISOString(),text:'知衡 · 定时检查未完成\n'+new Date(at).toLocaleString('zh-CN',{timeZone:'Asia/Shanghai',hour12:false})+'\n本轮采集或校验失败，无法更新市场判断。下一交易时段检查继续。'}},'failed');exec("UPDATE observation_tasks SET failure_streak=?,health='本轮执行失败；请查看检查记录',fault_notified_at=CASE WHEN ? THEN ? ELSE fault_notified_at END WHERE task_id=?",failures,notify?1:0,at,task.id);
  });}
  finally{clearInterval(pulse);clearTimeout(timeout);}
 }

@@ -53,3 +53,17 @@ test('archived report interpretation leaves original sources, baseline and notif
  const before=sql.one<any>('SELECT detail FROM observation_checks WHERE run_id=?',rid).detail,states=sql.all('SELECT * FROM observation_theme_states'),notices=sql.all('SELECT * FROM notification_outbox');const interpreted=JSON.parse(service.observationDetail(key).checks[0].detail!);
  assert.ok(interpreted.interpretation.themeReport.decision);assert.equal(interpreted.interpretation.themeReport.mode.mode,'replay');assert.equal(sql.one<any>('SELECT detail FROM observation_checks WHERE run_id=?',rid).detail,before);assert.deepEqual(sql.all('SELECT * FROM observation_theme_states'),states);assert.deepEqual(sql.all('SELECT * FROM notification_outbox'),notices);
 });
+test('periodic delivery includes baseline and unchanged reports without inventing events; synthetic stays quiet',()=>{
+ const c=config(),key=service.createObservation(c),task=service.observationTask(key)!;
+ task.config.notification.channel='feishu';
+ const report=analyzeThemes(fixture(),c,[],true);
+ assert.equal(service.checkNotification(task,report,false).notify,false);
+ task.config.notification.cadence='every_check';
+ const baseline=service.checkNotification(task,report,false);
+ assert.equal(baseline.notify,true);assert.match(baseline.text,/定时检查/);assert.match(baseline.text,/建立基线/);assert.equal(report.events.length,0);
+ report.baseline=false;
+ const same=service.checkNotification(task,report,false);
+ assert.equal(same.notify,true);assert.match(same.text,/没有新增条件变化/);
+ assert.equal(service.checkNotification(task,report,true).notify,false);
+ task.config.notification.channel='app';assert.equal(service.checkNotification(task,report,false).notify,false);
+});
